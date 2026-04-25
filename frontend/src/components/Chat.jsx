@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { consult } from '../services/api'
+import { TRANSLATIONS } from '../translations'
 
 // ── Static data ──────────────────────────────────────────────────────────────
 
@@ -9,11 +10,6 @@ const LANGUAGES = [
   { code: 'bn', label: 'বাংলা' },
   { code: 'es', label: 'Español' },
   { code: 'fr', label: 'Français' },
-  { code: 'sw', label: 'Kiswahili' },
-  { code: 'ha', label: 'Hausa' },
-  { code: 'ar', label: 'العربية' },
-  { code: 'pt', label: 'Português' },
-  { code: 'zu', label: 'isiZulu' },
 ]
 
 const SYMPTOMS = [
@@ -55,9 +51,9 @@ const CONDITIONS = [
 ]
 
 const SEV = {
-  low:    { emoji: '🟢', label: 'Mild',     color: '#15803d', bg: '#f0fdf4', border: '#86efac' },
-  medium: { emoji: '🟡', label: 'Moderate', color: '#92400e', bg: '#fefce8', border: '#fde047' },
-  high:   { emoji: '🔴', label: 'Urgent',   color: '#991b1b', bg: '#fff1f2', border: '#fca5a5' },
+  low:    { emoji: '🟢', tKey: 'severityMild',     color: '#15803d', bg: '#f0fdf4', border: '#86efac' },
+  medium: { emoji: '🟡', tKey: 'severityModerate', color: '#92400e', bg: '#fefce8', border: '#fde047' },
+  high:   { emoji: '🔴', tKey: 'severityUrgent',   color: '#991b1b', bg: '#fff1f2', border: '#fca5a5' },
 }
 
 const KNOWN_SYMPTOM_LABELS = new Set(SYMPTOMS.map(s => s.label))
@@ -80,7 +76,7 @@ function Progress({ step }) {
 
 // ── Results screen ───────────────────────────────────────────────────────────
 
-function ResultScreen({ result, onRestart }) {
+function ResultScreen({ result, onRestart, t }) {
   const sev = SEV[result.severity] || SEV.low
   const emergency =
     result.severity === 'high' ||
@@ -92,25 +88,25 @@ function ResultScreen({ result, onRestart }) {
         <div className="emergency-alert" role="alert">
           <span className="emergency-icon-lg" aria-hidden="true">🚨</span>
           <div>
-            <strong>EMERGENCY — Get help immediately!</strong>
-            <p>Go to the nearest hospital or call emergency services now.</p>
+            <strong>{t.emergencyTitle}</strong>
+            <p>{t.emergencyText}</p>
           </div>
         </div>
       )}
 
       <div className="sev-card" style={{ background: sev.bg, borderColor: sev.border }}>
         <span className="sev-emoji" aria-hidden="true">{sev.emoji}</span>
-        <span className="sev-label" style={{ color: sev.color }}>{sev.label}</span>
+        <span className="sev-label" style={{ color: sev.color }}>{t[sev.tKey]}</span>
       </div>
 
       <div className="result-block">
-        <p className="result-block-title">What to do</p>
+        <p className="result-block-title">{t.whatToDo}</p>
         <p className="result-block-text">{result.recommended_action}</p>
       </div>
 
       {result.possible_conditions && result.possible_conditions.length > 0 && (
         <div className="result-block">
-          <p className="result-block-title">Possible causes</p>
+          <p className="result-block-title">{t.possibleCauses}</p>
           <ul className="result-list">
             {result.possible_conditions.map((c, i) => <li key={i}>{c}</li>)}
           </ul>
@@ -120,16 +116,14 @@ function ResultScreen({ result, onRestart }) {
       {result.urgency && (
         <div className="urgency-row">
           <span aria-hidden="true">⏱</span>
-          <span>Urgency: <strong>{result.urgency}</strong></span>
+          <span>{t.urgency}: <strong>{result.urgency}</strong></span>
         </div>
       )}
 
-      <p className="result-disclaimer">
-        This is guidance only — always speak to a trained health worker or doctor for medical advice.
-      </p>
+      <p className="result-disclaimer">{t.resultDisclaimer}</p>
 
       <button className="btn-restart" type="button" onClick={onRestart}>
-        Start a new consultation
+        {t.startNew}
       </button>
     </div>
   )
@@ -137,9 +131,10 @@ function ResultScreen({ result, onRestart }) {
 
 // ── Main wizard ──────────────────────────────────────────────────────────────
 
-export default function Chat() {
+export default function Chat({ lang, setLang }) {
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en
+
   const [step, setStep]               = useState(0)
-  const [lang, setLang]               = useState('en')
   const [symptoms, setSymptoms]       = useState([])
   const [customInput, setCustomInput] = useState('')
   const [age, setAge]                 = useState('')
@@ -170,17 +165,17 @@ export default function Chat() {
 
   function goNext() {
     if (step === 1 && symptoms.length === 0) {
-      setError('Please select or type at least one symptom.')
+      setError(t.errorNoSymptom)
       return
     }
     if (step === 2) {
       const n = parseInt(age, 10)
       if (!age || isNaN(n) || n < 0 || n > 120) {
-        setError('Please enter a valid age between 0 and 120.')
+        setError(t.errorAge)
         return
       }
       if (!duration) {
-        setError('Please select how long the symptoms have been present.')
+        setError(t.errorDuration)
         return
       }
     }
@@ -211,7 +206,7 @@ export default function Chat() {
       setError(
         Array.isArray(detail)
           ? detail.map(d => d.msg).join('. ')
-          : detail || 'Could not reach the server. Please check your connection and try again.'
+          : detail || t.errorNetwork
       )
     } finally {
       setLoading(false)
@@ -226,7 +221,7 @@ export default function Chat() {
 
   // Results
   if (step === TOTAL_STEPS && result) {
-    return <ResultScreen result={result} onRestart={restart} />
+    return <ResultScreen result={result} onRestart={restart} t={t} />
   }
 
   const customSymptoms = symptoms.filter(s => !KNOWN_SYMPTOM_LABELS.has(s))
@@ -238,8 +233,8 @@ export default function Chat() {
       {/* ── Step 0: Language ── */}
       {step === 0 && (
         <div className="wiz-step">
-          <h2 className="wiz-title">Choose your language</h2>
-          <p className="wiz-sub">Select the language you understand best</p>
+          <h2 className="wiz-title">{t.chooseLanguage}</h2>
+          <p className="wiz-sub">{t.selectLanguage}</p>
           <div className="lang-grid">
             {LANGUAGES.map(l => (
               <button
@@ -253,7 +248,7 @@ export default function Chat() {
             ))}
           </div>
           <button className="btn-primary" type="button" onClick={goNext}>
-            Continue →
+            {t.continueBtn}
           </button>
         </div>
       )}
@@ -261,8 +256,8 @@ export default function Chat() {
       {/* ── Step 1: Symptoms ── */}
       {step === 1 && (
         <div className="wiz-step">
-          <h2 className="wiz-title">What are the symptoms?</h2>
-          <p className="wiz-sub">Tap all that apply. You can pick more than one.</p>
+          <h2 className="wiz-title">{t.whatSymptoms}</h2>
+          <p className="wiz-sub">{t.tapSymptoms}</p>
           <div className="chip-grid">
             {SYMPTOMS.map(s => (
               <button
@@ -271,7 +266,7 @@ export default function Chat() {
                 className={`chip${symptoms.includes(s.label) ? ' sel' : ''}`}
                 onClick={() => toggleSymptom(s.label)}
               >
-                <span aria-hidden="true">{s.icon}</span> {s.label}
+                <span aria-hidden="true">{s.icon}</span> {t.symptoms[s.label] || s.label}
               </button>
             ))}
           </div>
@@ -280,12 +275,12 @@ export default function Chat() {
             <input
               type="text"
               className="custom-input"
-              placeholder="Other symptom — type here…"
+              placeholder={t.otherSymptomPlaceholder}
               value={customInput}
               onChange={e => setCustomInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }}
             />
-            <button type="button" className="btn-add" onClick={addCustom}>Add</button>
+            <button type="button" className="btn-add" onClick={addCustom}>{t.addBtn}</button>
           </div>
 
           {customSymptoms.length > 0 && (
@@ -305,8 +300,8 @@ export default function Chat() {
 
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
-            <button type="button" className="btn-back" onClick={goBack}>← Back</button>
-            <button type="button" className="btn-primary" onClick={goNext}>Next →</button>
+            <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
+            <button type="button" className="btn-primary" onClick={goNext}>{t.nextBtn}</button>
           </div>
         </div>
       )}
@@ -314,11 +309,11 @@ export default function Chat() {
       {/* ── Step 2: Patient details ── */}
       {step === 2 && (
         <div className="wiz-step">
-          <h2 className="wiz-title">About the patient</h2>
-          <p className="wiz-sub">This helps us give better guidance</p>
+          <h2 className="wiz-title">{t.aboutPatient}</h2>
+          <p className="wiz-sub">{t.betterGuidance}</p>
 
           <div className="field-group">
-            <label>Age <span className="req">*</span></label>
+            <label>{t.ageLbl} <span className="req">*</span></label>
             <div className="age-row">
               <button
                 type="button"
@@ -346,7 +341,7 @@ export default function Chat() {
           </div>
 
           <div className="field-group">
-            <label>Gender <span className="opt">(optional)</span></label>
+            <label>{t.genderLbl} <span className="opt">{t.optional}</span></label>
             <div className="choice-row">
               {['male', 'female', 'other'].map(g => (
                 <button
@@ -355,14 +350,14 @@ export default function Chat() {
                   className={`choice-btn${gender === g ? ' sel' : ''}`}
                   onClick={() => setGender(prev => prev === g ? '' : g)}
                 >
-                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                  {t.genderOptions[g]}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="field-group">
-            <label>How long have the symptoms lasted? <span className="req">*</span></label>
+            <label>{t.howLong} <span className="req">*</span></label>
             <div className="dur-grid">
               {DURATIONS.map(d => (
                 <button
@@ -371,8 +366,8 @@ export default function Chat() {
                   className={`dur-btn${duration === d.value ? ' sel' : ''}`}
                   onClick={() => setDuration(d.value)}
                 >
-                  <span className="dur-label">{d.label}</span>
-                  <span className="dur-sub">{d.sub}</span>
+                  <span className="dur-label">{t.durations[d.value]?.label || d.label}</span>
+                  <span className="dur-sub">{t.durations[d.value]?.sub || d.sub}</span>
                 </button>
               ))}
             </div>
@@ -380,8 +375,8 @@ export default function Chat() {
 
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
-            <button type="button" className="btn-back" onClick={goBack}>← Back</button>
-            <button type="button" className="btn-primary" onClick={goNext}>Next →</button>
+            <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
+            <button type="button" className="btn-primary" onClick={goNext}>{t.nextBtn}</button>
           </div>
         </div>
       )}
@@ -389,10 +384,8 @@ export default function Chat() {
       {/* ── Step 3: Existing conditions ── */}
       {step === 3 && (
         <div className="wiz-step">
-          <h2 className="wiz-title">Any existing health conditions?</h2>
-          <p className="wiz-sub">
-            Select any the patient already has. Tap "Skip" if you are not sure.
-          </p>
+          <h2 className="wiz-title">{t.existingConditions}</h2>
+          <p className="wiz-sub">{t.selectConditions}</p>
           <div className="chip-grid">
             {CONDITIONS.map(c => (
               <button
@@ -401,14 +394,14 @@ export default function Chat() {
                 className={`chip${conditions.includes(c.label) ? ' sel' : ''}`}
                 onClick={() => toggleCondition(c.label)}
               >
-                <span aria-hidden="true">{c.icon}</span> {c.label}
+                <span aria-hidden="true">{c.icon}</span> {t.conditions[c.label] || c.label}
               </button>
             ))}
           </div>
 
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
-            <button type="button" className="btn-back" onClick={goBack}>← Back</button>
+            <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
             <button
               type="button"
               className="btn-primary"
@@ -416,8 +409,8 @@ export default function Chat() {
               disabled={loading}
             >
               {loading
-                ? <><span className="spinner" aria-hidden="true" /> Checking…</>
-                : 'Get My Assessment'}
+                ? <><span className="spinner" aria-hidden="true" /> {t.checking}</>
+                : t.getAssessment}
             </button>
           </div>
           <button
@@ -426,7 +419,7 @@ export default function Chat() {
             onClick={() => submit([])}
             disabled={loading}
           >
-            Skip — I don't know / No conditions
+            {t.skipConditions}
           </button>
         </div>
       )}

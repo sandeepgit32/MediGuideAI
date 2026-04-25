@@ -53,11 +53,13 @@ import re
 from typing import List
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 
 from ..schemas.safety import SafetyOutput
 from ..schemas.triage import TriageOutput
 from ..config import settings
 from ..utils.prompts import build_safety_prompt
+from ..utils.llm_fallback import extract_failed_generation_json
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +168,14 @@ async def assess(triage: TriageOutput, symptoms: List[str]) -> SafetyOutput:
         json.JSONDecodeError: When the agent returns a malformed JSON string.
     """
     prompt = build_safety_prompt(triage, symptoms)
-    result = await _SAFETY_AGENT.run(prompt)
-    output = getattr(result, "output", None)
+    try:
+        result = await _SAFETY_AGENT.run(prompt)
+        output = getattr(result, "output", None)
+    except ModelHTTPError as exc:
+        data = extract_failed_generation_json(exc)
+        if data is None:
+            raise
+        return SafetyOutput(**data)
     if isinstance(output, SafetyOutput):
         return output
     if isinstance(output, dict):

@@ -34,10 +34,12 @@ from typing import List, Tuple
 import json
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 
 from ..schemas.escalation import EscalationOutput
 from ..config import settings
 from ..utils.prompts import build_escalation_prompt
+from ..utils.llm_fallback import extract_failed_generation_json
 
 # ---------------------------------------------------------------------------
 # Keyword lookup table used by the scan_emergency_keywords tool
@@ -221,8 +223,14 @@ async def detect_emergency(symptoms: List[str]) -> Tuple[bool, List[str]]:
     keyword_result = scan_emergency_keywords(symptoms_text)
     prompt = build_escalation_prompt(symptoms, keyword_result)
 
-    result = await _AGENT.run(prompt)
-    output = getattr(result, "output", None)
+    try:
+        result = await _AGENT.run(prompt)
+        output = getattr(result, "output", None)
+    except ModelHTTPError as exc:
+        data = extract_failed_generation_json(exc)
+        if data is None:
+            raise
+        return bool(data.get("is_emergency")), list(data.get("flags", []))
     if isinstance(output, EscalationOutput):
         return output.is_emergency, output.flags
     if isinstance(output, dict):

@@ -47,6 +47,8 @@ from ..schemas.triage import TriageOutput
 from ..utils.prompts import build_triage_prompt
 from ..config import settings
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
+from ..utils.llm_fallback import extract_failed_generation_json
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +170,14 @@ async def triage(
     """
     prompt = build_triage_prompt(patient, context_texts, language)
 
-    result = await _AGENT.run(prompt)
-    output = getattr(result, "output", None)
+    try:
+        result = await _AGENT.run(prompt)
+        output = getattr(result, "output", None)
+    except ModelHTTPError as exc:
+        data = extract_failed_generation_json(exc)
+        if data is None:
+            raise
+        return TriageOutput(**data)
     if isinstance(output, TriageOutput):
         return output
     if isinstance(output, dict):

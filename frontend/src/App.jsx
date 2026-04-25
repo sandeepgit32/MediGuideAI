@@ -1,8 +1,12 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Chat from './components/Chat'
 import logo from '../logo.png'
+import { TRANSLATIONS } from './translations'
 
 export default function App() {
+  const [lang, setLang] = useState('en')
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en
+
   return (
     <div className="app">
       <header className="app-header">
@@ -16,14 +20,11 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <Chat />
+        <Chat lang={lang} setLang={setLang} />
       </main>
 
       <footer className="app-footer">
-        <p>
-          For guidance only · Not a replacement for a doctor ·
-          In an emergency call your local emergency number immediately.
-        </p>
+        <p>{t.footer}</p>
       </footer>
     </div>
   )
