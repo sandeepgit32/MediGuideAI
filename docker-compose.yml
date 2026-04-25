@@ -23,7 +23,7 @@ services:
       - MONGODB_CONSULTATIONS_COLLECTION=consultations
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_API_URL=${LLM_API_URL:-https://api.groq.com/openai/v1}
-      - MODEL_NAME=${MODEL_NAME:-llama3-8b-8192}
+      - MODEL_NAME=${MODEL_NAME:-llama-3.1-8b-instant}
       # Also expose as standard OpenAI env vars so the openai package picks them up
       - OPENAI_API_KEY=${LLM_API_KEY}
       - OPENAI_BASE_URL=${LLM_API_URL:-https://api.groq.com/openai/v1}

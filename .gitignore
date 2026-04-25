@@ -1,2 +1,4 @@
 .env
 paper.md
+*.pyc
+__pycache__/

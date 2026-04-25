@@ -11,11 +11,15 @@ class Settings:
 
     def __init__(self):
         self.LLM_API_KEY: Optional[str] = os.environ.get("LLM_API_KEY")
-        self.LLM_API_URL: str = os.environ.get("LLM_API_URL", "https://api.groq.com/openai/v1")
-        self.MODEL_NAME: str = os.environ.get("MODEL_NAME", "llama3-8b-8192")
+        self.LLM_API_URL: str = os.environ.get(
+            "LLM_API_URL", "https://api.groq.com/openai/v1"
+        )
+        self.MODEL_NAME: str = os.environ.get("MODEL_NAME", "llama-3.1-8b-instant")
 
         # MongoDB settings (used as consultation storage layer)
-        self.MONGODB_URI: Optional[str] = os.environ.get("MONGODB_URI", "mongodb://mongo:27017")
+        self.MONGODB_URI: Optional[str] = os.environ.get(
+            "MONGODB_URI", "mongodb://mongo:27017"
+        )
         self.MONGODB_DB: str = os.environ.get("MONGODB_DB", "mguide")
         self.MONGODB_CONSULTATIONS_COLLECTION: str = os.environ.get(
             "MONGODB_CONSULTATIONS_COLLECTION", "consultations"
@@ -43,21 +47,29 @@ class Settings:
         self.MEM0_EMBED_API_KEY: Optional[str] = (
             os.environ.get("MEM0_EMBED_API_KEY") or self.LLM_API_KEY
         )
-        self.MEM0_EMBED_MODEL: str = os.environ.get("MEM0_EMBED_MODEL", "text-embedding-3-small")
+        self.MEM0_EMBED_MODEL: str = os.environ.get(
+            "MEM0_EMBED_MODEL", "text-embedding-3-small"
+        )
 
         # Chroma (vector DB) configuration
-        self.CHROMA_COLLECTION_NAME: str = os.environ.get("CHROMA_COLLECTION_NAME", "who_guidelines")
+        self.CHROMA_COLLECTION_NAME: str = os.environ.get(
+            "CHROMA_COLLECTION_NAME", "who_guidelines"
+        )
         self.CHROMA_SERVER_HOST: Optional[str] = os.environ.get("CHROMA_SERVER_HOST")
         chroma_port = os.environ.get("CHROMA_SERVER_HTTP_PORT")
         try:
-            self.CHROMA_SERVER_HTTP_PORT: int = int(chroma_port) if chroma_port is not None else 8000
+            self.CHROMA_SERVER_HTTP_PORT: int = (
+                int(chroma_port) if chroma_port is not None else 8000
+            )
         except ValueError:
             self.CHROMA_SERVER_HTTP_PORT = 8000
 
         # CORS / localization
         allowed = os.environ.get("ALLOWED_ORIGINS")
         if allowed:
-            self.ALLOWED_ORIGINS: List[str] = [s.strip() for s in allowed.split(",") if s.strip()]
+            self.ALLOWED_ORIGINS: List[str] = [
+                s.strip() for s in allowed.split(",") if s.strip()
+            ]
         else:
             self.ALLOWED_ORIGINS = ["*"]
 

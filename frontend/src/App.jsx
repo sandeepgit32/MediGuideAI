@@ -3,11 +3,28 @@ import Chat from './components/Chat'
 
 export default function App() {
   return (
-    <div className="app-container">
-      <header className="app-header">MediGuideAI — Symptom Triage</header>
-      <main>
+    <div className="app">
+      <header className="app-header">
+        <div className="header-inner">
+          <span className="header-icon" aria-hidden="true">⚕</span>
+          <div>
+            <h1 className="header-title">MediGuideAI</h1>
+            <p className="header-subtitle">Free health guidance · Any language</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="app-main">
         <Chat />
       </main>
+
+      <footer className="app-footer">
+        <p>
+          For guidance only · Not a replacement for a doctor ·
+          In an emergency call your local emergency number immediately.
+        </p>
+      </footer>
     </div>
   )
 }
+

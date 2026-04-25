@@ -137,7 +137,7 @@ _AGENT = Agent(
         "  'poisoning'           — suspected ingestion of a toxic substance or overdose\n"
         "  'severe_dehydration'  — inability to keep fluids down, sunken eyes, no urine output\n\n"
         "Assessment rules:\n"
-        "1. Call scan_emergency_keywords with the joined symptoms text to get a keyword signal.\n"
+        "1. A keyword pre-scan result is provided in the prompt — use it as a first-pass signal.\n"
         "2. Set is_emergency=True if ANY flag applies — even if the keyword scan returns no matches but "
         "   clinical reasoning suggests an emergency (e.g. rephrased descriptions).\n"
         "3. Populate flags with every applicable flag key from the vocabulary above.\n"
@@ -153,7 +153,6 @@ _AGENT = Agent(
 )
 
 
-@_AGENT.tool_plain
 def scan_emergency_keywords(symptoms_text: str) -> dict:
     """Keyword-scan *symptoms_text* for known emergency patterns.
 
@@ -218,7 +217,9 @@ async def detect_emergency(symptoms: List[str]) -> Tuple[bool, List[str]]:
             as an :class:`EscalationOutput`.
         json.JSONDecodeError: When the agent returns a malformed JSON string.
     """
-    prompt = build_escalation_prompt(symptoms)
+    symptoms_text = " ".join(symptoms)
+    keyword_result = scan_emergency_keywords(symptoms_text)
+    prompt = build_escalation_prompt(symptoms, keyword_result)
 
     result = await _AGENT.run(prompt)
     output = getattr(result, "output", None)

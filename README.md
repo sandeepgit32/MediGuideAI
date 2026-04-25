@@ -115,8 +115,8 @@ LLM_API_KEY=<YOUR_API_KEY_HERE>
 LLM_API_URL=https://api.groq.com/openai/v1
 
 # Model name supported by the configured provider.
-# Examples: llama3-8b-8192  |  mixtral-8x7b-32768  |  llama3-70b-8192
-MODEL_NAME=llama3-8b-8192
+# Examples: llama-3.1-8b-instant  |  llama-3.3-70b-versatile
+MODEL_NAME=llama-3.1-8b-instant
 
 # ── Vector DB (Chroma) ────────────────────────────────────────────────────────
 # Set automatically by docker-compose. Override when pointing to an external server.

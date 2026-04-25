@@ -206,6 +206,6 @@ async def consult(payload: PatientInput) -> Dict:
         "possible_conditions": triage_result.possible_conditions,
         "recommended_action": triage_result.recommended_action,
         "urgency": triage_result.urgency,
-        "safety": safety.dict(),
+        "safety": safety.model_dump(),
         "emergency_flags": emergency_flags,
     }

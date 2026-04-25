@@ -12,4 +12,14 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    port: 3000,
+    host: true,
+    proxy: {
+      '/consult': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

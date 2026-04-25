@@ -115,25 +115,40 @@ def build_safety_prompt(triage, symptoms: List[str]) -> str:
     )
 
 
-def build_escalation_prompt(symptoms: List[str]) -> str:
+def build_escalation_prompt(
+    symptoms: List[str], keyword_scan: dict | None = None
+) -> str:
     """Construct a prompt for the escalation agent to detect emergency red flags.
 
-    Formats the symptom list as a bullet list and instructs the agent to call
-    ``scan_emergency_keywords`` as a first-pass signal before applying clinical
-    reasoning.
+    Formats the symptom list as a bullet list and includes the pre-computed
+    keyword scan result so the LLM can use it as a first-pass signal without
+    needing to call a tool.
 
     Args:
         symptoms: The patient's (English) symptom strings.
+        keyword_scan: Optional dict with ``matched_flags`` (list[str]) and
+            ``is_likely_emergency`` (bool) from a pre-run keyword scan.
 
     Returns:
         A prompt string ready to be passed to ``_AGENT.run()``.
     """
     symptom_lines = "\n".join(f"  - {s}" for s in symptoms)
+    scan_section = ""
+    if keyword_scan is not None:
+        matched = keyword_scan.get("matched_flags", [])
+        likely = keyword_scan.get("is_likely_emergency", False)
+        flags_str = ", ".join(matched) if matched else "none"
+        scan_section = (
+            f"\n# Keyword Pre-Scan Result\n"
+            f"  matched_flags: {flags_str}\n"
+            f"  is_likely_emergency: {str(likely).lower()}\n"
+        )
     return (
         "Analyze the patient symptoms below for life-threatening emergency signs.\n\n"
         "# Patient Symptoms\n"
-        f"{symptom_lines}\n\n"
-        "Call scan_emergency_keywords first, then apply clinical reasoning to catch any "
+        f"{symptom_lines}\n"
+        f"{scan_section}\n"
+        "Apply clinical reasoning to confirm or extend the keyword scan — catch any "
         "emergency signs not covered by keyword matching.\n"
         'Return ONLY valid EscalationOutput JSON: {"is_emergency": <bool>, "flags": [<flag_key>, ...]}'
     )
