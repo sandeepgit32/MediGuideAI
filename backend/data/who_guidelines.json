@@ -1,0 +1,22 @@
+[
+  {
+    "id": "fever",
+    "text": "Fever in adults: if persistent >3 days, seek medical review; if very high (>40°C), or accompanied by confusion, seek emergency care. For children, follow local pediatric guidance."
+  },
+  {
+    "id": "chest_pain",
+    "text": "Chest pain guidance: sudden crushing chest pain, shortness of breath, or radiating pain may indicate a heart attack — seek immediate medical attention. If pain is mild and positional, seek clinic-level review."
+  },
+  {
+    "id": "breathing",
+    "text": "Breathing difficulty: any severe difficulty breathing, inability to speak full sentences, or blue lips/face requires emergency services. Mild cough with no breathing distress can be monitored at home."
+  },
+  {
+    "id": "stroke",
+    "text": "Stroke red flags: sudden face droop, arm weakness, slurred speech — call emergency services immediately. Time is critical."
+  },
+  {
+    "id": "bleeding",
+    "text": "Severe bleeding: uncontrolled bleeding that soaks dressings or does not stop after pressure requires emergency help. Apply pressure and seek care."
+  }
+]
