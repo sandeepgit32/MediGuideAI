@@ -46,6 +46,7 @@ Example Response:
     }
 """
 
+import logging
 import uuid
 from typing import Dict
 
@@ -63,6 +64,7 @@ from ..services.agent_memory import memory_service
 from ..services.consultation_store import consultation_store
 from ..services.rag_service import rag_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -102,23 +104,39 @@ async def consult(payload: PatientInput) -> Dict:
     # Pydantic validation ensures payload is well-formed before reaching this point
     # Combine symptoms into a single string for language detection
     joined_symptoms = " ".join(payload.symptoms)
+    logger.info(
+        "New consultation: age=%s gender=%s symptom_count=%d duration=%r",
+        payload.age,
+        payload.gender,
+        len(payload.symptoms),
+        payload.duration,
+    )
     # Use provided language or auto-detect from symptom text
     detected = (
         detect_language(joined_symptoms) if not payload.language else payload.language
     )
     src_lang = detected or settings.DEFAULT_LANGUAGE
+    logger.info(
+        "Language resolved: provided=%r detected=%r using=%r",
+        payload.language,
+        detected,
+        src_lang,
+    )
 
     # Translate symptoms to English for LLM processing and RAG queries
     # This ensures consistent triage logic regardless of patient's native language
     symptoms_en = joined_symptoms
     if src_lang != "en":
+        logger.info("Translating symptoms from %r to 'en'", src_lang)
         symptoms_en = await translate_text(joined_symptoms, target="en")
+        logger.debug("Translated symptoms: %r", symptoms_en)
 
     # ----- Step 2: Contextual Information Retrieval (RAG) -----
     # Initialize RAG service and retrieve WHO guidelines relevant to patient symptoms
     # Contextual documents significantly improve triage accuracy and evidence-based recommendations
     await rag_service.initialize()
     contexts = rag_service.query(symptoms_en, top_k=settings.RAG_TOP_K)
+    logger.info("RAG retrieved %d context document(s) for triage", len(contexts))
 
     # Prepare English-translated payload for triage agent
     # Split translated symptoms back into a list, handling both semicolon and single symptom formats
@@ -132,27 +150,53 @@ async def consult(payload: PatientInput) -> Dict:
     # ----- Step 3: AI-Powered Triage Assessment -----
     # Call the triage agent with English symptoms, RAG context, and original language
     # The agent returns severity, possible conditions, and recommended actions
+    logger.info(
+        "Running triage agent (language=%r, context_docs=%d)", src_lang, len(contexts)
+    )
     triage_result: TriageOutput = await triage_agent(
         payload_en, contexts, language=src_lang
+    )
+    logger.info(
+        "Triage result: severity=%r urgency=%r conditions=%s",
+        triage_result.severity,
+        triage_result.urgency,
+        triage_result.possible_conditions,
     )
 
     # ----- Step 4: Emergency Escalation Detection -----
     # Check for life-threatening symptoms that require immediate emergency services
     # Emergency override takes precedence over triage assessment for patient safety
+    logger.info("Running escalation agent")
     emergency, emergency_flags = await detect_emergency(payload.symptoms)
     if emergency:
+        logger.warning(
+            "EMERGENCY detected — flags=%s; overriding severity to 'high'",
+            emergency_flags,
+        )
         # Force severity to high and override recommended action for emergency cases
         triage_result.severity = "high"
         triage_result.recommended_action = (
             "Seek immediate medical help (emergency services)."
         )
         triage_result.urgency = "immediate"
+    else:
+        logger.info("No emergency flags detected")
 
     # ----- Step 5: Safety Assessment & Override -----
     # Run safety filter to catch potentially harmful or clinically inappropriate recommendations
     # If safety issues detected, override triage recommendation with conservative alternative
+    logger.info("Running safety agent")
     safety: SafetyOutput = await safety_assess(triage_result, payload.symptoms)
+    logger.info(
+        "Safety result: is_safe=%s risk_flags=%s",
+        safety.is_safe,
+        safety.risk_flags,
+    )
     if not safety.is_safe:
+        logger.warning(
+            "Safety override triggered (flags=%s): replacing recommended_action",
+            safety.risk_flags,
+        )
         # Override triage recommendation with conservative, safe alternative
         # Patient safety check takes absolute precedence
         triage_result.recommended_action = (
@@ -165,6 +209,7 @@ async def consult(payload: PatientInput) -> Dict:
     try:
         # Generate unique consultation identifier
         consultation_id = str(uuid.uuid4())
+        logger.info("Persisting consultation (id=%s)", consultation_id)
         # Structure complete consultation record for MongoDB
         consultation_data = {
             "last_input": payload.model_dump(),
@@ -195,13 +240,16 @@ async def consult(payload: PatientInput) -> Dict:
         await memory_service.add_memory(patient_memory_id, mem0_messages)
         # Persist complete consultation record to MongoDB for analytics and compliance
         await consultation_store.save(consultation_id, consultation_data)
+        logger.info("Consultation %s persisted successfully", consultation_id)
     except Exception:
         # Non-blocking failure: storage errors do not prevent response delivery
-        pass
+        logger.exception(
+            "Failed to persist consultation (best-effort); response will still be returned"
+        )
 
     # ----- Step 7: Return Structured Response -----
     # Assemble final consultation result with all assessment components
-    return {
+    response = {
         "severity": triage_result.severity,
         "possible_conditions": triage_result.possible_conditions,
         "recommended_action": triage_result.recommended_action,
@@ -209,3 +257,11 @@ async def consult(payload: PatientInput) -> Dict:
         "safety": safety.model_dump(),
         "emergency_flags": emergency_flags,
     }
+    logger.info(
+        "Consultation complete: severity=%r urgency=%r emergency=%s safe=%s",
+        response["severity"],
+        response["urgency"],
+        bool(emergency_flags),
+        safety.is_safe,
+    )
+    return response

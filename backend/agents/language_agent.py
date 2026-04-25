@@ -61,8 +61,12 @@ def detect_language(text: str) -> Optional[str]:
     """
     try:
         lang = detect(text)
+        logger.info("Language detected: %r (text_length=%d)", lang, len(text))
         return lang
     except LangDetectException:
+        logger.warning(
+            "Language detection failed for text_length=%d; returning None", len(text)
+        )
         return None
 
 
@@ -124,11 +128,15 @@ async def translate_text(text: str, target: str = "en") -> str:
         # → "I have a fever"
     """
     if not text or not text.strip():
+        logger.debug("translate_text called with empty text; returning as-is")
         return text
     if target == "en":
         return text
 
+    logger.info("Translating text to %r (source_length=%d)", target, len(text))
     prompt = build_translation_prompt(text, target)
     result = await _LANG_AGENT.run(prompt)
     out = getattr(result, "output", "")
-    return (out or "").strip()
+    translated = (out or "").strip()
+    logger.info("Translation complete: output_length=%d", len(translated))
+    return translated

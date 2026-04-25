@@ -59,7 +59,7 @@ from ..schemas.safety import SafetyOutput
 from ..schemas.triage import TriageOutput
 from ..config import settings
 from ..utils.prompts import build_safety_prompt
-from ..utils.llm_fallback import extract_failed_generation_json
+from ..utils.llm_fallback import extract_failed_generation_json, run_agent_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +169,7 @@ async def assess(triage: TriageOutput, symptoms: List[str]) -> SafetyOutput:
     """
     prompt = build_safety_prompt(triage, symptoms)
     try:
-        result = await _SAFETY_AGENT.run(prompt)
+        result = await run_agent_with_retry(_SAFETY_AGENT, prompt)
         output = getattr(result, "output", None)
     except ModelHTTPError as exc:
         data = extract_failed_generation_json(exc)

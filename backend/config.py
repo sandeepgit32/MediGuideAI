@@ -41,8 +41,8 @@ class Settings:
         # Groq does not expose an embeddings endpoint, so configure a separate
         # provider via MEM0_EMBED_API_URL / MEM0_EMBED_API_KEY / MEM0_EMBED_MODEL.
         # Defaults to OpenAI text-embedding-3-small.
-        self.MEM0_EMBED_API_URL: str = os.environ.get(
-            "MEM0_EMBED_API_URL", "https://api.openai.com/v1"
+        self.MEM0_EMBED_API_URL: str = (
+            os.environ.get("MEM0_EMBED_API_URL") or "https://api.openai.com/v1"
         )
         self.MEM0_EMBED_API_KEY: Optional[str] = (
             os.environ.get("MEM0_EMBED_API_KEY") or self.LLM_API_KEY

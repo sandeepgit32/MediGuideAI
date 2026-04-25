@@ -32,6 +32,7 @@ Design notes
 
 from typing import List, Tuple
 import json
+import logging
 
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelHTTPError
@@ -39,7 +40,9 @@ from pydantic_ai.exceptions import ModelHTTPError
 from ..schemas.escalation import EscalationOutput
 from ..config import settings
 from ..utils.prompts import build_escalation_prompt
-from ..utils.llm_fallback import extract_failed_generation_json
+from ..utils.llm_fallback import extract_failed_generation_json, run_agent_with_retry
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Keyword lookup table used by the scan_emergency_keywords tool
@@ -221,24 +224,49 @@ async def detect_emergency(symptoms: List[str]) -> Tuple[bool, List[str]]:
     """
     symptoms_text = " ".join(symptoms)
     keyword_result = scan_emergency_keywords(symptoms_text)
+    logger.info(
+        "Escalation keyword scan: matched_flags=%s is_likely_emergency=%s",
+        keyword_result["matched_flags"],
+        keyword_result["is_likely_emergency"],
+    )
     prompt = build_escalation_prompt(symptoms, keyword_result)
+    logger.info("Running escalation agent for %d symptom(s)", len(symptoms))
 
     try:
-        result = await _AGENT.run(prompt)
+        result = await run_agent_with_retry(_AGENT, prompt)
         output = getattr(result, "output", None)
     except ModelHTTPError as exc:
+        logger.warning(
+            "Escalation ModelHTTPError — attempting failed_generation fallback: %s", exc
+        )
         data = extract_failed_generation_json(exc)
         if data is None:
+            logger.error("Escalation fallback failed; re-raising ModelHTTPError")
             raise
+        logger.info(
+            "Escalation fallback succeeded: is_emergency=%s flags=%s",
+            data.get("is_emergency"),
+            data.get("flags"),
+        )
         return bool(data.get("is_emergency")), list(data.get("flags", []))
     if isinstance(output, EscalationOutput):
+        logger.info(
+            "Escalation result: is_emergency=%s flags=%s",
+            output.is_emergency,
+            output.flags,
+        )
         return output.is_emergency, output.flags
     if isinstance(output, dict):
+        logger.debug("Escalation agent returned dict")
         return bool(output.get("is_emergency")), list(output.get("flags", []))
     if isinstance(output, str):
+        logger.debug("Escalation agent returned string; parsing JSON")
         data = json.loads(output)
         return bool(data.get("is_emergency")), list(data.get("flags", []))
 
+    logger.error(
+        "Escalation agent returned unrecognised type: %s", type(output).__name__
+    )
     raise ValueError(
         f"Escalation agent returned an unrecognised output type: {type(output).__name__}"
     )

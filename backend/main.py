@@ -14,10 +14,12 @@ the settings module.
 """
 
 import asyncio
+import logging
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
@@ -25,6 +27,16 @@ from .routes.consult import router as consult_router
 from .services.agent_memory import memory_service
 from .services.consultation_store import consultation_store
 from .services.rag_service import rag_service
+
+# ---------------------------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -52,11 +64,29 @@ async def lifespan(app: FastAPI):
     Yields:
         None
     """
-    # Initialize RAG index and memory on startup (idempotent).
-    await rag_service.initialize()
-    await memory_service.initialize()
-    await consultation_store.initialize()
+    logger.info("MediGuideAI starting up — initializing services")
+    try:
+        await rag_service.initialize()
+        logger.info("RAG service initialized")
+    except Exception:
+        logger.exception("RAG service initialization failed")
+    try:
+        await memory_service.initialize()
+        logger.info("Agent memory service initialized")
+    except Exception:
+        logger.exception("Agent memory service initialization failed")
+    try:
+        await consultation_store.initialize()
+        logger.info("Consultation store initialized")
+    except Exception:
+        logger.exception("Consultation store initialization failed")
+    logger.info(
+        "MediGuideAI startup complete (model=%s, allowed_origins=%s)",
+        settings.MODEL_NAME,
+        settings.ALLOWED_ORIGINS,
+    )
     yield
+    logger.info("MediGuideAI shutting down")
 
 
 app = FastAPI(
@@ -65,6 +95,24 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log every incoming HTTP request with method, path, and elapsed time."""
+    start = time.perf_counter()
+    logger.info("Request started: %s %s", request.method, request.url.path)
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "Request finished: %s %s → %d (%.1f ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
+
 
 # Configure CORS middleware to allow cross-origin requests from specified origins.
 # Defaults to wildcard (*) if ALLOWED_ORIGINS is not set.
@@ -91,6 +139,7 @@ async def root():
     Returns:
         dict: A simple response with status {"ok": true, "service": "MediGuideAI"}
     """
+    logger.debug("Health check endpoint called")
     return {"ok": True, "service": "MediGuideAI"}
 
 

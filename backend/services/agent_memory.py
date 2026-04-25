@@ -71,6 +71,15 @@ class AgentMemoryService:
         """
         from mem0 import Memory
 
+        if settings.MEM0_EMBED_API_URL == settings.LLM_API_URL:
+            logger.warning(
+                "MEM0_EMBED_API_URL (%s) is the same as LLM_API_URL. "
+                "Many providers (e.g. Groq) do not expose a /v1/embeddings endpoint. "
+                "Set MEM0_EMBED_API_URL and MEM0_EMBED_API_KEY to a provider that "
+                "supports embeddings (e.g. OpenAI, a local Ollama instance).",
+                settings.MEM0_EMBED_API_URL,
+            )
+
         config = {
             "llm": {
                 "provider": "openai",
@@ -120,10 +129,14 @@ class AgentMemoryService:
         """
         if not self._memory:
             raise RuntimeError("AgentMemoryService not initialized")
+        logger.info(
+            "Storing memory for user_id=%r (%d message(s))", user_id, len(messages)
+        )
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, lambda: self._memory.add(messages, user_id=user_id)
         )
+        logger.info("Memory stored for user_id=%r", user_id)
 
     async def search_memory(self, user_id: str, query: str) -> List[str]:
         """
@@ -141,7 +154,11 @@ class AgentMemoryService:
                        empty list if no memories exist or the service is uninitialised.
         """
         if not self._memory:
+            logger.warning(
+                "search_memory called but service not initialized; returning []"
+            )
             return []
+        logger.info("Searching memory for user_id=%r query=%r", user_id, query[:80])
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(
             None,
@@ -153,6 +170,9 @@ class AgentMemoryService:
             for entry in results.get("results", []):
                 if isinstance(entry, dict) and "memory" in entry:
                     memories.append(entry["memory"])
+        logger.info(
+            "Memory search returned %d result(s) for user_id=%r", len(memories), user_id
+        )
         return memories
 
 

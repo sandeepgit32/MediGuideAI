@@ -91,6 +91,7 @@ class ConsultationStore:
         """
         if not self._collection:
             raise RuntimeError("ConsultationStore not initialized")
+        logger.info("Saving consultation id=%s", consultation_id)
         await self._collection.update_one(
             {"consultation_id": consultation_id},
             {
@@ -101,6 +102,7 @@ class ConsultationStore:
             },
             upsert=True,
         )
+        logger.info("Consultation id=%s saved to MongoDB", consultation_id)
 
     async def get(self, consultation_id: str) -> Optional[dict]:
         """
@@ -113,8 +115,14 @@ class ConsultationStore:
             dict or None: The stored consultation data, or ``None`` if not found.
         """
         if not self._collection:
+            logger.warning("get called but ConsultationStore not initialized")
             return None
+        logger.debug("Fetching consultation id=%s", consultation_id)
         doc = await self._collection.find_one({"consultation_id": consultation_id})
+        if doc:
+            logger.debug("Consultation id=%s found", consultation_id)
+        else:
+            logger.debug("Consultation id=%s not found", consultation_id)
         return doc.get("data") if doc else None
 
 

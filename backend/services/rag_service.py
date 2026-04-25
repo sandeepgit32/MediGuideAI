@@ -101,9 +101,11 @@ class RAGService:
                     os.path.dirname(__file__), "..", "data", "who_guidelines.json"
                 )
             )
+            logger.info("Loading WHO guidelines from %s", data_file)
             with open(data_file, "r", encoding="utf-8") as f:
                 items = json.load(f)
             self.docs = [it.get("text", "") for it in items]
+            logger.info("Loaded %d WHO guideline document(s)", len(self.docs))
         except Exception:
             logger.exception("Failed to load RAG docs; using empty list")
             self.docs = []
@@ -124,6 +126,11 @@ class RAGService:
                 "CHROMA_SERVER_HOST is not configured. This deployment requires a Docker-hosted Chroma server (set CHROMA_SERVER_HOST to 'chroma' when using docker-compose)."
             )
 
+        logger.info(
+            "Connecting to Chroma server at %s:%d",
+            settings.CHROMA_SERVER_HOST,
+            settings.CHROMA_SERVER_HTTP_PORT,
+        )
         client = chromadb.HttpClient(
             host=settings.CHROMA_SERVER_HOST,
             port=settings.CHROMA_SERVER_HTTP_PORT,
@@ -131,6 +138,7 @@ class RAGService:
         collection = client.get_or_create_collection(
             name=settings.CHROMA_COLLECTION_NAME
         )
+        logger.info("Using Chroma collection: %r", settings.CHROMA_COLLECTION_NAME)
 
         # If collection empty, add documents (server will compute embeddings)
         try:
@@ -139,11 +147,15 @@ class RAGService:
         except Exception:
             has_docs = False
         if not has_docs and self.docs:
+            logger.info("Collection is empty; indexing %d document(s)", len(self.docs))
             ids = [f"doc-{i}" for i in range(len(self.docs))]
             metadatas = [
                 {"source": "who_guidelines", "idx": i} for i in range(len(self.docs))
             ]
             collection.add(ids=ids, documents=self.docs, metadatas=metadatas)
+            logger.info("Indexed %d document(s) into Chroma", len(self.docs))
+        else:
+            logger.info("Chroma collection already populated; skipping indexing")
 
         self.client = client
         self.collection = collection
@@ -172,13 +184,16 @@ class RAGService:
         if top_k is None:
             top_k = settings.RAG_TOP_K
         if not self.collection:
+            logger.warning("RAG query skipped: collection not initialized")
             return []
+        logger.debug("RAG query: top_k=%d text=%r", top_k, query_text[:120])
         try:
             res = self.collection.query(query_texts=[query_text], n_results=top_k)
             # result format: dict with keys like 'ids','documents','distances'
             docs = []
             if isinstance(res, dict):
                 docs = res.get("documents", [[]])[0]
+            logger.info("RAG query returned %d document(s)", len(docs or []))
             return docs or []
         except Exception:
             logger.exception("Chroma query failed")

@@ -48,7 +48,7 @@ from ..utils.prompts import build_triage_prompt
 from ..config import settings
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelHTTPError
-from ..utils.llm_fallback import extract_failed_generation_json
+from ..utils.llm_fallback import extract_failed_generation_json, run_agent_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -169,23 +169,42 @@ async def triage(
         json.JSONDecodeError: When the agent returns a malformed JSON string.
     """
     prompt = build_triage_prompt(patient, context_texts, language)
+    logger.info(
+        "Triage agent invoked: age=%s gender=%s symptoms=%s context_docs=%d lang=%r",
+        patient.age,
+        patient.gender,
+        patient.symptoms,
+        len(context_texts),
+        language,
+    )
 
     try:
-        result = await _AGENT.run(prompt)
+        result = await run_agent_with_retry(_AGENT, prompt)
         output = getattr(result, "output", None)
     except ModelHTTPError as exc:
+        logger.warning(
+            "Triage ModelHTTPError — attempting failed_generation fallback: %s", exc
+        )
         data = extract_failed_generation_json(exc)
         if data is None:
+            logger.error("Triage fallback failed; re-raising ModelHTTPError")
             raise
+        logger.info("Triage fallback succeeded (keys=%s)", list(data.keys()))
         return TriageOutput(**data)
     if isinstance(output, TriageOutput):
+        logger.info(
+            "Triage output: severity=%r urgency=%r", output.severity, output.urgency
+        )
         return output
     if isinstance(output, dict):
+        logger.debug("Triage agent returned dict; coercing to TriageOutput")
         return TriageOutput(**output)
     if isinstance(output, str):
+        logger.debug("Triage agent returned string; parsing JSON")
         data = json.loads(output)
         return TriageOutput(**data)
 
+    logger.error("Triage agent returned unrecognised type: %s", type(output).__name__)
     raise ValueError(
         f"Triage agent returned an unrecognised output type: {type(output).__name__}"
     )
