@@ -1,15 +1,16 @@
 import React from 'react'
 import Chat from './components/Chat'
+import logo from '../logo.png'
 
 export default function App() {
   return (
     <div className="app">
       <header className="app-header">
         <div className="header-inner">
-          <span className="header-icon" aria-hidden="true">⚕</span>
-          <div>
+          <img src={logo} alt="MediGuideAI logo" className="header-icon" />
+          <div className="header-text">
             <h1 className="header-title">MediGuideAI</h1>
-            <p className="header-subtitle">Free health guidance · Any language</p>
+            <p className="header-subtitle">Free health guidance</p>
           </div>
         </div>
       </header>

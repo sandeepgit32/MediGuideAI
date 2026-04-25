@@ -30,16 +30,15 @@ body {
 .app-header {
   background: linear-gradient(135deg, #0c4a6e, #0369a1);
   color: #fff;
-  padding: 16px 20px;
+  padding: 9px 20px;
 }
 .header-inner {
-  max-width: 540px;
-  margin: 0 auto;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 14px;
 }
-.header-icon    { font-size: 2.2rem; line-height: 1; }
+.header-icon    { height: 2.6rem; width: auto; flex-shrink: 0; }
+.header-text    { flex-shrink: 0; }
 .header-title   { font-size: 1.4rem; font-weight: 700; }
 .header-subtitle { font-size: 0.82rem; opacity: 0.82; margin-top: 2px; }
 
