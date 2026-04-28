@@ -175,6 +175,33 @@ class AgentMemoryService:
         )
         return memories
 
+    async def delete_session_memory(self, user_id: str) -> None:
+        """Delete all Mem0 memories associated with *user_id* (session_id).
+
+        Called when a session is explicitly deleted (``DELETE /session/{id}``)
+        or evicted by the background TTL task.  Failures are silently logged so
+        they never block the caller.
+
+        Args:
+            user_id: The session UUID used as the Mem0 ``user_id``.
+        """
+        if not self._memory:
+            logger.warning(
+                "delete_session_memory called but service not initialized; skipping"
+            )
+            return
+        logger.info("Deleting mem0 memories for user_id=%r", user_id)
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(
+                None, lambda: self._memory.delete_all(user_id=user_id)
+            )
+            logger.info("Mem0 memories deleted for user_id=%r", user_id)
+        except Exception:
+            logger.exception(
+                "Failed to delete mem0 memories for user_id=%r (non-blocking)", user_id
+            )
+
 
 # Module-level singleton — I/O is deferred to initialize(), called from main.py lifespan.
 memory_service = AgentMemoryService()

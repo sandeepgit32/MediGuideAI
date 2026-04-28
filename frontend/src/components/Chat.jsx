@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { consult } from '../services/api'
+import React, { useEffect, useRef, useState } from 'react'
+import { clearSession, followupChat, replyChat, startChat } from '../services/api'
 import { TRANSLATIONS } from '../translations'
 
 // ── Static data ──────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const SEV = {
 const KNOWN_SYMPTOM_LABELS = new Set(SYMPTOMS.map(s => s.label))
 const TOTAL_STEPS = 4
 
-// ── Progress indicator ───────────────────────────────────────────────────────
+// ── Sub-components ───────────────────────────────────────────────────────────
 
 function Progress({ step }) {
   return (
@@ -74,13 +74,104 @@ function Progress({ step }) {
   )
 }
 
-// ── Results screen ───────────────────────────────────────────────────────────
+// ── Chat view (clarifying questions) ────────────────────────────────────────
 
-function ResultScreen({ result, onRestart, t }) {
+function ChatView({ messages, loading, onSend, t }) {
+  const [input, setInput] = useState('')
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  function handleSend() {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    onSend(text)
+  }
+
+  return (
+    <div className="chat-view">
+      <div className="chat-messages">
+        {messages.map((msg, i) => (
+          <div key={i} className={`chat-bubble chat-bubble-${msg.role}`}>
+            {msg.role === 'assistant' && (
+              <span className="chat-bubble-label">{t.clarifyingTitle}</span>
+            )}
+            <span>{msg.content}</span>
+          </div>
+        ))}
+        {loading && (
+          <div className="chat-bubble chat-bubble-assistant chat-bubble-thinking">
+            <span className="chat-bubble-label">{t.clarifyingTitle}</span>
+            <span className="thinking-dots"><span /><span /><span /></span>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="chat-input-row">
+        <input
+          className="chat-input"
+          type="text"
+          placeholder={t.typeYourAnswer}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSend() } }}
+          disabled={loading}
+          autoFocus
+        />
+        <button
+          className="btn-send"
+          type="button"
+          onClick={handleSend}
+          disabled={loading || !input.trim()}
+        >
+          {loading ? <span className="spinner" /> : t.sendBtn}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Result + follow-up view ──────────────────────────────────────────────────
+
+function ResultScreen({ result, onRestart, t, sessionId }) {
   const sev = SEV[result.severity] || SEV.low
-  const emergency =
-    result.severity === 'high' ||
-    (result.emergency_flags && result.emergency_flags.length > 0)
+  const emergency = result.severity === 'high' ||
+    (result.safety?.risk_flags || []).includes('missing_emergency_escalation')
+
+  const [followups, setFollowups]       = useState([])  // [{question, answer}]
+  const [followupInput, setFollowupInput] = useState('')
+  const [followupLoading, setFollowupLoading] = useState(false)
+  const [followupError, setFollowupError]   = useState(null)
+  const [showFollowup, setShowFollowup] = useState(false)
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    if (followups.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [followups, followupLoading])
+
+  async function handleFollowup() {
+    const text = followupInput.trim()
+    if (!text) return
+    setFollowupInput('')
+    setFollowupLoading(true)
+    setFollowupError(null)
+    try {
+      const res = await followupChat(sessionId, text)
+      setFollowups(prev => [...prev, { question: text, answer: res.answer }])
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      setFollowupError(
+        Array.isArray(detail) ? detail.map(d => d.msg).join('. ') : detail || t.errorNetwork
+      )
+    } finally {
+      setFollowupLoading(false)
+    }
+  }
 
   return (
     <div className="result-screen">
@@ -122,6 +213,68 @@ function ResultScreen({ result, onRestart, t }) {
 
       <p className="result-disclaimer">{t.resultDisclaimer}</p>
 
+      {/* ── Follow-up section ── */}
+      {followups.length > 0 && (
+        <div className="followup-section">
+          {followups.map((fq, i) => (
+            <div key={i} className="followup-qa">
+              <div className="followup-question">
+                <span className="followup-q-icon">❓</span>
+                <span>{fq.question}</span>
+              </div>
+              <div className="followup-answer">
+                <span className="followup-a-icon">💬</span>
+                <span>{fq.answer}</span>
+              </div>
+            </div>
+          ))}
+          {followupLoading && (
+            <div className="followup-qa">
+              <div className="followup-answer followup-thinking">
+                <span className="thinking-dots"><span /><span /><span /></span>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      )}
+
+      {followupError && (
+        <p className="wiz-error" role="alert">{followupError}</p>
+      )}
+
+      {/* ── Ask more / follow-up input ── */}
+      {showFollowup ? (
+        <div className="chat-input-row">
+          <input
+            className="chat-input"
+            type="text"
+            placeholder={t.followupPlaceholder}
+            value={followupInput}
+            onChange={e => setFollowupInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleFollowup() } }}
+            disabled={followupLoading}
+            autoFocus
+          />
+          <button
+            className="btn-send"
+            type="button"
+            onClick={handleFollowup}
+            disabled={followupLoading || !followupInput.trim()}
+          >
+            {followupLoading ? <span className="spinner" /> : t.sendBtn}
+          </button>
+        </div>
+      ) : (
+        <button
+          className="btn-askmore"
+          type="button"
+          onClick={() => setShowFollowup(true)}
+        >
+          {t.askMoreBtn}
+        </button>
+      )}
+
       <button className="btn-restart" type="button" onClick={onRestart}>
         {t.startNew}
       </button>
@@ -134,6 +287,7 @@ function ResultScreen({ result, onRestart, t }) {
 export default function Chat({ lang, setLang }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en
 
+  // Wizard state
   const [step, setStep]               = useState(0)
   const [symptoms, setSymptoms]       = useState([])
   const [customInput, setCustomInput] = useState('')
@@ -141,9 +295,14 @@ export default function Chat({ lang, setLang }) {
   const [gender, setGender]           = useState('')
   const [duration, setDuration]       = useState('')
   const [conditions, setConditions]   = useState([])
-  const [result, setResult]           = useState(null)
-  const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState(null)
+  const [loading, setLoading]         = useState(false)
+
+  // Session / chat state
+  const [sessionId, setSessionId]   = useState(null)
+  const [chatPhase, setChatPhase]   = useState('wizard')   // 'wizard' | 'chat' | 'result'
+  const [chatMessages, setChatMessages] = useState([])     // [{role, content}] for chat view
+  const [result, setResult]         = useState(null)
 
   function toggleSymptom(s) {
     setSymptoms(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s])
@@ -154,8 +313,8 @@ export default function Chat({ lang, setLang }) {
   }
 
   function addCustom() {
-    const t = customInput.trim()
-    if (t && !symptoms.includes(t)) setSymptoms(p => [...p, t])
+    const text = customInput.trim()
+    if (text && !symptoms.includes(text)) setSymptoms(p => [...p, text])
     setCustomInput('')
   }
 
@@ -164,20 +323,11 @@ export default function Chat({ lang, setLang }) {
   }
 
   function goNext() {
-    if (step === 1 && symptoms.length === 0) {
-      setError(t.errorNoSymptom)
-      return
-    }
+    if (step === 1 && symptoms.length === 0) { setError(t.errorNoSymptom); return }
     if (step === 2) {
       const n = parseInt(age, 10)
-      if (!age || isNaN(n) || n < 0 || n > 120) {
-        setError(t.errorAge)
-        return
-      }
-      if (!duration) {
-        setError(t.errorDuration)
-        return
-      }
+      if (!age || isNaN(n) || n < 0 || n > 120) { setError(t.errorAge); return }
+      if (!duration) { setError(t.errorDuration); return }
     }
     setError(null)
     setStep(s => s + 1)
@@ -185,6 +335,21 @@ export default function Chat({ lang, setLang }) {
 
   function goBack() { setError(null); setStep(s => s - 1) }
 
+  // Handle a ChatResponse (type="question" | "result") from any chat API call
+  function handleChatResponse(res, newSessionId) {
+    const sid = newSessionId || sessionId
+    if (res.type === 'question') {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: res.question }])
+      setSessionId(sid)
+      setChatPhase('chat')
+    } else if (res.type === 'result') {
+      setResult(res)
+      setSessionId(sid)
+      setChatPhase('result')
+    }
+  }
+
+  // Submit from wizard step 3 (conditions step)
   async function submit(conditionsOverride) {
     const finalConditions = conditionsOverride !== undefined ? conditionsOverride : conditions
     setLoading(true)
@@ -198,32 +363,75 @@ export default function Chat({ lang, setLang }) {
         ...(gender && { gender }),
         ...(finalConditions.length > 0 && { existing_conditions: finalConditions }),
       }
-      const res = await consult(payload)
-      setResult(res)
-      setStep(TOTAL_STEPS)
+      const res = await startChat(payload)
+      handleChatResponse(res, res.session_id)
     } catch (err) {
       const detail = err?.response?.data?.detail
       setError(
-        Array.isArray(detail)
-          ? detail.map(d => d.msg).join('. ')
-          : detail || t.errorNetwork
+        Array.isArray(detail) ? detail.map(d => d.msg).join('. ') : detail || t.errorNetwork
       )
     } finally {
       setLoading(false)
     }
   }
 
-  function restart() {
+  // Send a reply to a clarifying question
+  async function sendReply(message) {
+    setChatMessages(prev => [...prev, { role: 'user', content: message }])
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await replyChat(sessionId, message)
+      handleChatResponse(res)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      setError(
+        Array.isArray(detail) ? detail.map(d => d.msg).join('. ') : detail || t.errorNetwork
+      )
+      // Remove the optimistically-added user message on error
+      setChatMessages(prev => prev.slice(0, -1))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Start a new consultation: clear session, reset all state
+  async function restart() {
+    try { await clearSession(sessionId) } catch (_) { /* best-effort */ }
     setStep(0); setLang('en'); setSymptoms([]); setCustomInput('')
     setAge(''); setGender(''); setDuration(''); setConditions([])
-    setResult(null); setError(null)
+    setError(null); setLoading(false)
+    setSessionId(null); setChatPhase('wizard'); setChatMessages([]); setResult(null)
   }
 
-  // Results
-  if (step === TOTAL_STEPS && result) {
-    return <ResultScreen result={result} onRestart={restart} t={t} />
+  // ── Chat phase (clarifying questions) ──
+  if (chatPhase === 'chat') {
+    return (
+      <div className="wizard">
+        {error && <p className="wiz-error" role="alert">{error}</p>}
+        <ChatView
+          messages={chatMessages}
+          loading={loading}
+          onSend={sendReply}
+          t={t}
+        />
+      </div>
+    )
   }
 
+  // ── Result phase ──
+  if (chatPhase === 'result' && result) {
+    return (
+      <ResultScreen
+        result={result}
+        onRestart={restart}
+        t={t}
+        sessionId={sessionId}
+      />
+    )
+  }
+
+  // ── Wizard phase ──
   const customSymptoms = symptoms.filter(s => !KNOWN_SYMPTOM_LABELS.has(s))
 
   return (
@@ -270,7 +478,6 @@ export default function Chat({ lang, setLang }) {
               </button>
             ))}
           </div>
-
           <div className="custom-row">
             <input
               type="text"
@@ -282,22 +489,16 @@ export default function Chat({ lang, setLang }) {
             />
             <button type="button" className="btn-add" onClick={addCustom}>{t.addBtn}</button>
           </div>
-
           {customSymptoms.length > 0 && (
             <div className="custom-tags">
               {customSymptoms.map(s => (
                 <span key={s} className="custom-tag">
                   {s}
-                  <button
-                    type="button"
-                    onClick={() => toggleSymptom(s)}
-                    aria-label={`Remove ${s}`}
-                  >×</button>
+                  <button type="button" onClick={() => toggleSymptom(s)} aria-label={`Remove ${s}`}>×</button>
                 </span>
               ))}
             </div>
           )}
-
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
@@ -311,42 +512,24 @@ export default function Chat({ lang, setLang }) {
         <div className="wiz-step">
           <h2 className="wiz-title">{t.aboutPatient}</h2>
           <p className="wiz-sub">{t.betterGuidance}</p>
-
           <div className="field-group">
             <label>{t.ageLbl} <span className="req">*</span></label>
             <div className="age-row">
-              <button
-                type="button"
-                className="age-btn"
-                onClick={() => adjustAge(-1)}
-                aria-label="Decrease age"
-              >−</button>
+              <button type="button" className="age-btn" onClick={() => adjustAge(-1)} aria-label="Decrease age">−</button>
               <input
-                type="number"
-                className="age-field"
-                min="0"
-                max="120"
-                value={age}
-                onChange={e => setAge(e.target.value)}
-                placeholder="0–120"
-                inputMode="numeric"
+                type="number" className="age-field" min="0" max="120"
+                value={age} onChange={e => setAge(e.target.value)}
+                placeholder="0–120" inputMode="numeric"
               />
-              <button
-                type="button"
-                className="age-btn"
-                onClick={() => adjustAge(1)}
-                aria-label="Increase age"
-              >+</button>
+              <button type="button" className="age-btn" onClick={() => adjustAge(1)} aria-label="Increase age">+</button>
             </div>
           </div>
-
           <div className="field-group">
             <label>{t.genderLbl} <span className="opt">{t.optional}</span></label>
             <div className="choice-row">
               {['male', 'female', 'other'].map(g => (
                 <button
-                  key={g}
-                  type="button"
+                  key={g} type="button"
                   className={`choice-btn${gender === g ? ' sel' : ''}`}
                   onClick={() => setGender(prev => prev === g ? '' : g)}
                 >
@@ -355,14 +538,12 @@ export default function Chat({ lang, setLang }) {
               ))}
             </div>
           </div>
-
           <div className="field-group">
             <label>{t.howLong} <span className="req">*</span></label>
             <div className="dur-grid">
               {DURATIONS.map(d => (
                 <button
-                  key={d.value}
-                  type="button"
+                  key={d.value} type="button"
                   className={`dur-btn${duration === d.value ? ' sel' : ''}`}
                   onClick={() => setDuration(d.value)}
                 >
@@ -372,7 +553,6 @@ export default function Chat({ lang, setLang }) {
               ))}
             </div>
           </div>
-
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
@@ -389,8 +569,7 @@ export default function Chat({ lang, setLang }) {
           <div className="chip-grid">
             {CONDITIONS.map(c => (
               <button
-                key={c.label}
-                type="button"
+                key={c.label} type="button"
                 className={`chip${conditions.includes(c.label) ? ' sel' : ''}`}
                 onClick={() => toggleCondition(c.label)}
               >
@@ -398,27 +577,21 @@ export default function Chat({ lang, setLang }) {
               </button>
             ))}
           </div>
-
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
             <button
-              type="button"
               className="btn-primary"
-              onClick={() => submit()}
+              type="button"
               disabled={loading}
+              onClick={() => submit()}
             >
               {loading
-                ? <><span className="spinner" aria-hidden="true" /> {t.checking}</>
+                ? <><span className="spinner" /> {t.checking}</>
                 : t.getAssessment}
             </button>
           </div>
-          <button
-            type="button"
-            className="btn-skip"
-            onClick={() => submit([])}
-            disabled={loading}
-          >
+          <button type="button" className="btn-skip" onClick={() => submit([])}>
             {t.skipConditions}
           </button>
         </div>

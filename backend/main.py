@@ -23,10 +23,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routes.consult import router as consult_router
+from .routes.chat import router as chat_router
 from .services.agent_memory import memory_service
-from .services.consultation_store import consultation_store
 from .services.rag_service import rag_service
+from .services.session_store import start_eviction_task, stop_eviction_task
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -47,16 +47,12 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events for the FastAPI application.
 
     **Startup (before yield):**
-      - Initializes the RAG (Retrieval-Augmented Generation) service with
-        Chroma vector database connection and WHO guideline embeddings.
-      - Initializes the memory service (Mem0 OSS agent memory backed by Chroma).
-      - Initializes the consultation store (MongoDB raw record storage).
+      - Initializes the RAG service with Chroma vector database connection.
+      - Initializes the Mem0 agent memory service backed by Chroma.
+      - Starts the background session TTL eviction task.
 
     **Shutdown (after yield):**
-      - Gracefully closes all service connections.
-
-    Both initialization calls are idempotent; if services are already initialized,
-    they return quickly without causing errors.
+      - Cancels the eviction task.
 
     Args:
         app: The FastAPI application instance.
@@ -75,17 +71,14 @@ async def lifespan(app: FastAPI):
         logger.info("Agent memory service initialized")
     except Exception:
         logger.exception("Agent memory service initialization failed")
-    try:
-        await consultation_store.initialize()
-        logger.info("Consultation store initialized")
-    except Exception:
-        logger.exception("Consultation store initialization failed")
+    start_eviction_task()
     logger.info(
         "MediGuideAI startup complete (model=%s, allowed_origins=%s)",
         settings.MODEL_NAME,
         settings.ALLOWED_ORIGINS,
     )
     yield
+    stop_eviction_task()
     logger.info("MediGuideAI shutting down")
 
 
@@ -124,8 +117,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the consultation routes (POST /consult, etc.)
-app.include_router(consult_router)
+# Include the chat routes (POST /chat, DELETE /session/{id})
+app.include_router(chat_router)
 
 
 @app.get("/", tags=["Health"])

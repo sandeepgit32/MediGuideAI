@@ -61,6 +61,11 @@ from ..config import settings
 from ..utils.prompts import build_safety_prompt
 from ..utils.llm_fallback import extract_failed_generation_json, run_agent_with_retry
 
+_EMERGENCY_OVERRIDE_MESSAGE = (
+    "Seek immediate emergency medical care — call emergency services or "
+    "go to the nearest hospital now."
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -84,20 +89,29 @@ _SAFETY_AGENT = Agent(
         "Evaluate the triage output and the patient's reported symptoms for safety issues.\n\n"
         "Risk flag vocabulary — use ONLY these exact keys in risk_flags:\n"
         "  'prescription_mentioned'       — recommendation refers to a specific drug or dosage\n"
-        "  'missing_emergency_escalation' — symptoms indicate an emergency but severity ≠ 'high'\n"
+        "  'missing_emergency_escalation' — symptoms indicate an emergency but severity != 'high'\n"
         "  'underestimated_severity'      — severity is too low for the reported symptoms\n"
         "  'dangerous_home_care_advice'   — advises home care when professional care is clearly needed\n"
         "  'contradictory_recommendation' — recommended_action contradicts severity level\n"
         "  'hallucination_like'           — output contains medically implausible conditions or advice\n"
         "  'insufficient_urgency'         — urgency field understates the clinical need\n\n"
+        "EMERGENCY RED FLAGS — if ANY of these appear in the symptom list AND severity != 'high', "
+        "you MUST include 'missing_emergency_escalation' in risk_flags:\n"
+        "  chest pain or chest tightness, difficulty breathing or shortness of breath, "
+        "  stroke signs (facial droop / arm weakness / slurred speech / sudden severe headache), "
+        "  loss of consciousness or unresponsiveness, seizure or convulsions, "
+        "  severe or uncontrolled bleeding, anaphylaxis (throat swelling / hives), "
+        "  fever above 38 C in infant under 3 months, suspected poisoning or overdose.\n\n"
         "Assessment rules:\n"
         "1. Call check_prescription_patterns with the recommended_action text to detect drug mentions.\n"
-        "2. Set is_safe=True only when no risk flags apply.\n"
-        "3. Populate risk_flags with every applicable flag key from the vocabulary above.\n"
-        "4. When is_safe=False, override_message must be a single conservative action sentence "
-        "   (e.g. 'Please seek immediate medical care at the nearest health facility.').\n"
-        "5. When is_safe=True, set override_message to null.\n"
-        "6. For ambiguous cases prefer is_safe=False — patient safety outweighs false positives."
+        "2. Check ALL patient symptoms against the emergency red flags list above.\n"
+        "3. Set is_safe=True only when no risk flags apply.\n"
+        "4. Populate risk_flags with every applicable flag key from the vocabulary above.\n"
+        "5. When is_safe=False, override_message must be a single conservative action sentence "
+        "   (e.g. 'Please seek immediate medical care at the nearest health facility.'). "
+        "   For emergency flags use: 'Seek immediate emergency medical care — call emergency services or go to the nearest hospital now.'\n"
+        "6. When is_safe=True, set override_message to null.\n"
+        "7. For ambiguous cases prefer is_safe=False — patient safety outweighs false positives."
     ),
     system_prompt=(
         "You are the final safety gate before a triage recommendation reaches the patient. "
@@ -177,12 +191,26 @@ async def assess(triage: TriageOutput, symptoms: List[str]) -> SafetyOutput:
             raise
         return SafetyOutput(**data)
     if isinstance(output, SafetyOutput):
-        return output
-    if isinstance(output, dict):
-        return SafetyOutput(**output)
-    if isinstance(output, str):
-        data = json.loads(output)
-        return SafetyOutput(**data)
-    raise ValueError(
-        f"Safety agent returned an unrecognised output type: {type(output).__name__}"
-    )
+        safety = output
+    elif isinstance(output, dict):
+        safety = SafetyOutput(**output)
+    elif isinstance(output, str):
+        safety = SafetyOutput(**json.loads(output))
+    else:
+        raise ValueError(
+            f"Safety agent returned an unrecognised output type: {type(output).__name__}"
+        )
+
+    # Ensure emergency override message is consistent when escalation flag is raised
+    if "missing_emergency_escalation" in safety.risk_flags:
+        if (
+            not safety.override_message
+            or "emergency" not in safety.override_message.lower()
+        ):
+            safety = SafetyOutput(
+                is_safe=False,
+                risk_flags=safety.risk_flags,
+                override_message=_EMERGENCY_OVERRIDE_MESSAGE,
+            )
+
+    return safety

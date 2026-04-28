@@ -16,15 +16,6 @@ class Settings:
         )
         self.MODEL_NAME: str = os.environ.get("MODEL_NAME", "llama-3.1-8b-instant")
 
-        # MongoDB settings (used as consultation storage layer)
-        self.MONGODB_URI: Optional[str] = os.environ.get(
-            "MONGODB_URI", "mongodb://mongo:27017"
-        )
-        self.MONGODB_DB: str = os.environ.get("MONGODB_DB", "mguide")
-        self.MONGODB_CONSULTATIONS_COLLECTION: str = os.environ.get(
-            "MONGODB_CONSULTATIONS_COLLECTION", "consultations"
-        )
-
         # RAG
         rag_top_k = os.environ.get("RAG_TOP_K")
         try:

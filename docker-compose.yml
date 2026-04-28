@@ -1,13 +1,5 @@
 version: '3.8'
 services:
-  mongo:
-    image: mongo:6.0
-    restart: unless-stopped
-    volumes:
-      - mongo_data:/data/db
-    ports:
-      - "27017:27017"
-
   backend:
     build:
       context: .
@@ -18,9 +10,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
-      - MONGODB_DB=mguide
-      - MONGODB_CONSULTATIONS_COLLECTION=consultations
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_API_URL=${LLM_API_URL:-https://api.groq.com/openai/v1}
       - MODEL_NAME=${MODEL_NAME:-llama-3.1-8b-instant}
@@ -34,7 +23,6 @@ services:
       - CHROMA_SERVER_HOST=chroma
       - CHROMA_SERVER_HTTP_PORT=8000
     depends_on:
-      - mongo
       - chroma
 
   frontend:
@@ -59,7 +47,5 @@ services:
       - default
 
 volumes:
-  mongo_data:
-    driver: local
   chroma_data:
     driver: local
