@@ -150,7 +150,7 @@ _AGENT = Agent(
         "5. Err on the side of caution: a false positive is safer than a missed emergency."
     ),
     system_prompt=(
-        "You are a triage safety net.  If a symptom could plausibly indicate a life-threatening "
+        "You are a triage safety net. If a symptom could plausibly indicate a life-threatening "
         "emergency, set is_emergency=True and include the relevant flag.  Missing a real emergency "
         "is far more dangerous than a false alarm."
     ),
