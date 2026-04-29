@@ -16,7 +16,7 @@ This module provides two public coroutines:
 ``answer_followup``
     Answers a patient's "know more" question **strictly within** the context of
     the current triage session (reported symptoms, demographics, triage result,
-    and WHO guideline excerpts).  Off-topic health questions are politely
+    and clinical guideline excerpts).  Off-topic health questions are politely
     declined.
 
     Returns a plain ``str`` answer suitable for direct display (after translation).

@@ -59,13 +59,13 @@ Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Do
 MediGuideAI/
 ├── backend/
 │   ├── agents/              # Pydantic-AI agents (triage, safety, escalation, language)
-│   ├── data/                # WHO guidelines seed data (who_guidelines.json)
+│   ├── data/                # clinical guidelines seed data (clinical_guideline.json)
 │   ├── routes/              # FastAPI route handlers
 │   ├── schemas/             # Pydantic request/response models
 │   ├── services/
 │   │   ├── agent_memory.py      # Mem0 OSS agent memory (Chroma-backed)
 │   │   ├── consultation_store.py# MongoDB consultation audit store
-│   │   ├── rag_service.py       # Chroma RAG over WHO guidelines
+│   │   ├── rag_service.py       # Chroma RAG over clinical guidelines
 │   │   └── llm_client.py        # OpenAI-compatible LLM HTTP client
 │   ├── utils/               # Prompt builders
 │   ├── config.py            # Settings loaded from environment variables
@@ -122,7 +122,7 @@ MODEL_NAME=llama-3.1-8b-instant
 # Set automatically by docker-compose. Override when pointing to an external server.
 CHROMA_SERVER_HOST=chroma
 CHROMA_SERVER_HTTP_PORT=8000
-CHROMA_COLLECTION_NAME=who_guidelines
+CHROMA_COLLECTION_NAME=clinical_guidelines
 
 # ── Agent Memory (Mem0 OSS) ───────────────────────────────────────────────────
 # Mem0 OSS runs locally; no cloud API key is required.
@@ -268,7 +268,7 @@ PatientInput
 └────────┬────────┘
          │
          ▼
-┌─────────────────┐   Queries Chroma for relevant WHO guideline context,
+┌─────────────────┐   Queries Chroma for relevant clinical guideline context,
 │   RAG Retrieval │   then passes top-K documents to the triage agent.
 └────────┬────────┘
          │

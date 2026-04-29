@@ -44,7 +44,7 @@ class Settings:
 
         # Chroma (vector DB) configuration
         self.CHROMA_COLLECTION_NAME: str = os.environ.get(
-            "CHROMA_COLLECTION_NAME", "who_guidelines"
+            "CHROMA_COLLECTION_NAME", "clinical_guidelines"
         )
         self.CHROMA_SERVER_HOST: Optional[str] = os.environ.get("CHROMA_SERVER_HOST")
         chroma_port = os.environ.get("CHROMA_SERVER_HTTP_PORT")

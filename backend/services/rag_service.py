@@ -2,11 +2,11 @@
 
 This module provides a Retrieval-Augmented Generation service that leverages a Docker-hosted
 Chroma vector database server for semantic search over medical guidelines. The service loads
-WHO guidelines from a JSON data file and enables similarity-based retrieval of relevant
+clinical guidelines from a JSON data file and enables similarity-based retrieval of relevant
 documents for medical consultation queries.
 
 The RAGService class handles:
-- Loading and managing WHO guidelines documents
+- Loading and managing clinical guidelines documents
 - Connecting to a Docker-hosted Chroma server via REST API
 - Creating and managing vector database collections
 - Performing semantic similarity search queries
@@ -19,7 +19,7 @@ Key Features:
 
 Requirements:
 - A running Chroma server (Docker-hosted, configured via CHROMA_SERVER_HOST)
-- WHO guidelines data in JSON format (backend/data/who_guidelines.json)
+- clinical guidelines data in JSON format (backend/data/clinical_guideline.json)
 - chromadb Python package for Chroma client
 
 Example:
@@ -62,13 +62,13 @@ class RAGService:
         self._initialized = False
         # default data path
         self.data_path = os.path.join(
-            os.path.dirname(__file__), "..", "data", "who_guidelines.json"
+            os.path.dirname(__file__), "..", "data", "clinical_guideline.json"
         )
 
     async def initialize(self):
         """Initialize the Chroma collection asynchronously.
 
-        Loads WHO guidelines documents from the data file and sets up the Chroma
+        Loads clinical guidelines documents from the data file and sets up the Chroma
         vector database collection. This method only executes once; subsequent calls
         are no-ops if already initialized.
 
@@ -86,7 +86,7 @@ class RAGService:
     def _sync_build(self):
         """Synchronously build and initialize the Chroma collection.
 
-        Loads WHO guidelines documents from the JSON data file, connects to the
+        Loads clinical guidelines documents from the JSON data file, connects to the
         Docker-hosted Chroma server, and creates/retrieves the collection. If the
         collection is empty, adds documents with server-side embedding computation.
 
@@ -98,14 +98,14 @@ class RAGService:
         try:
             data_file = os.path.abspath(
                 os.path.join(
-                    os.path.dirname(__file__), "..", "data", "who_guidelines.json"
+                    os.path.dirname(__file__), "..", "data", "clinical_guideline.json"
                 )
             )
-            logger.info("Loading WHO guidelines from %s", data_file)
+            logger.info("Loading clinical guidelines from %s", data_file)
             with open(data_file, "r", encoding="utf-8") as f:
                 items = json.load(f)
             self.docs = [it.get("text", "") for it in items]
-            logger.info("Loaded %d WHO guideline document(s)", len(self.docs))
+            logger.info("Loaded %d clinical guideline document(s)", len(self.docs))
         except Exception:
             logger.exception("Failed to load RAG docs; using empty list")
             self.docs = []
@@ -150,7 +150,7 @@ class RAGService:
             logger.info("Collection is empty; indexing %d document(s)", len(self.docs))
             ids = [f"doc-{i}" for i in range(len(self.docs))]
             metadatas = [
-                {"source": "who_guidelines", "idx": i} for i in range(len(self.docs))
+                {"source": "clinical_guidelines", "idx": i} for i in range(len(self.docs))
             ]
             collection.add(ids=ids, documents=self.docs, metadatas=metadatas)
             logger.info("Indexed %d document(s) into Chroma", len(self.docs))
@@ -168,7 +168,7 @@ class RAGService:
     def query(self, query_text: str, top_k: int = None) -> List[str]:
         """Query the Chroma collection for relevant documents.
 
-        Performs a semantic search on the WHO guidelines documents using the provided
+        Performs a semantic search on the clinical guidelines documents using the provided
         query text and returns the top-k most relevant documents.
 
         Args:

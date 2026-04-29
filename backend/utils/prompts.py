@@ -38,7 +38,7 @@ def build_triage_history_prompt(
         symptoms_en: English symptom strings.
         duration: Duration string.
         existing_conditions: List of pre-existing conditions.
-        rag_contexts: WHO guideline excerpts from RAG.
+        rag_contexts: clinical guideline excerpts from RAG.
         conversation: Full ``[{role, content}]`` history in English.
         clarification_count: Number of clarifying questions already asked.
         max_clarifications: Maximum allowed clarifying questions.
@@ -75,7 +75,7 @@ def build_triage_history_prompt(
 
     prompt = f"""You are a medical triage assistant for low-resource settings. This is not a medical diagnosis.
 
-# Clinical Context (WHO Guidelines)
+# Clinical Context (clinical Guidelines)
 {context_block}
 
 # Patient Information
@@ -179,7 +179,7 @@ def build_followup_prompt(
         question_en:   The patient's follow-up question (in English).
         conversation:  Full ``[{role, content}]`` history in English.
         triage_result: Dict representation of the triage result.
-        rag_contexts:  WHO guideline excerpts from this session.
+        rag_contexts:  clinical guideline excerpts from this session.
         language:      ISO 639-1 code for response language hint.
 
     Returns:
@@ -202,7 +202,7 @@ def build_followup_prompt(
 {triage_block}
 ```
 
-# Relevant WHO Guidelines (session context)
+# Relevant clinical Guidelines (session context)
 {context_block}
 
 # Conversation History
