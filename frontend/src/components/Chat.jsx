@@ -50,6 +50,9 @@ const CONDITIONS = [
   { label: 'Malaria',              icon: '🦟' },
 ]
 
+const NO_CONDITION_KEY = '__no_condition__'
+const KNOWN_CONDITION_LABELS = new Set(CONDITIONS.map(c => c.label))
+
 const SEV = {
   low:    { emoji: '🟢', tKey: 'severityMild',     color: '#15803d', bg: '#f0fdf4', border: '#86efac' },
   medium: { emoji: '🟡', tKey: 'severityModerate', color: '#92400e', bg: '#fefce8', border: '#fde047' },
@@ -295,6 +298,7 @@ export default function Chat({ lang, setLang }) {
   const [gender, setGender]           = useState('')
   const [duration, setDuration]       = useState('')
   const [conditions, setConditions]   = useState([])
+  const [customConditionInput, setCustomConditionInput] = useState('')
   const [error, setError]             = useState(null)
   const [loading, setLoading]         = useState(false)
 
@@ -304,18 +308,46 @@ export default function Chat({ lang, setLang }) {
   const [chatMessages, setChatMessages] = useState([])     // [{role, content}] for chat view
   const [result, setResult]         = useState(null)
 
+  const ageNum = parseInt(age, 10)
+  const isValidAge = age !== '' && !isNaN(ageNum) && ageNum >= 0 && ageNum <= 120
+  const canProceedStep1 = symptoms.length > 0
+  const canProceedStep2 = isValidAge && !!gender && !!duration
+  const customConditionText = customConditionInput.trim()
+  const canSubmitStep3 = conditions.length > 0 || customConditionText.length > 0
+
   function toggleSymptom(s) {
     setSymptoms(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s])
   }
 
   function toggleCondition(c) {
-    setConditions(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c])
+    setConditions(prev => {
+      // "No condition" is mutually exclusive with all specific conditions.
+      if (c === NO_CONDITION_KEY) {
+        return prev.includes(NO_CONDITION_KEY) ? [] : [NO_CONDITION_KEY]
+      }
+
+      const withoutNoCondition = prev.filter(x => x !== NO_CONDITION_KEY)
+      return withoutNoCondition.includes(c)
+        ? withoutNoCondition.filter(x => x !== c)
+        : [...withoutNoCondition, c]
+    })
   }
 
   function addCustom() {
     const text = customInput.trim()
     if (text && !symptoms.includes(text)) setSymptoms(p => [...p, text])
     setCustomInput('')
+  }
+
+  function addCustomCondition() {
+    const text = customConditionInput.trim()
+    if (!text) return
+
+    setConditions(prev => {
+      const withoutNoCondition = prev.filter(x => x !== NO_CONDITION_KEY)
+      return withoutNoCondition.includes(text) ? withoutNoCondition : [...withoutNoCondition, text]
+    })
+    setCustomConditionInput('')
   }
 
   function adjustAge(delta) {
@@ -327,6 +359,7 @@ export default function Chat({ lang, setLang }) {
     if (step === 2) {
       const n = parseInt(age, 10)
       if (!age || isNaN(n) || n < 0 || n > 120) { setError(t.errorAge); return }
+      if (!gender) { setError(t.errorGender || 'Please select a gender.'); return }
       if (!duration) { setError(t.errorDuration); return }
     }
     setError(null)
@@ -351,7 +384,12 @@ export default function Chat({ lang, setLang }) {
 
   // Submit from wizard step 3 (conditions step)
   async function submit(conditionsOverride) {
-    const finalConditions = conditionsOverride !== undefined ? conditionsOverride : conditions
+    const selectedConditions = conditionsOverride !== undefined ? conditionsOverride : conditions
+    const pendingCustomCondition = customConditionInput.trim()
+    const selectedWithPending = pendingCustomCondition
+      ? [...selectedConditions, pendingCustomCondition]
+      : selectedConditions
+    const normalizedFinalConditions = [...new Set(selectedWithPending.filter(c => c !== NO_CONDITION_KEY))]
     setLoading(true)
     setError(null)
     try {
@@ -361,7 +399,7 @@ export default function Chat({ lang, setLang }) {
         duration,
         language: lang,
         ...(gender && { gender }),
-        ...(finalConditions.length > 0 && { existing_conditions: finalConditions }),
+        ...(normalizedFinalConditions.length > 0 && { existing_conditions: normalizedFinalConditions }),
       }
       const res = await startChat(payload)
       handleChatResponse(res, res.session_id)
@@ -399,7 +437,7 @@ export default function Chat({ lang, setLang }) {
   async function restart() {
     try { await clearSession(sessionId) } catch (_) { /* best-effort */ }
     setStep(0); setLang('en'); setSymptoms([]); setCustomInput('')
-    setAge(''); setGender(''); setDuration(''); setConditions([])
+    setAge(''); setGender(''); setDuration(''); setConditions([]); setCustomConditionInput('')
     setError(null); setLoading(false)
     setSessionId(null); setChatPhase('wizard'); setChatMessages([]); setResult(null)
   }
@@ -433,6 +471,9 @@ export default function Chat({ lang, setLang }) {
 
   // ── Wizard phase ──
   const customSymptoms = symptoms.filter(s => !KNOWN_SYMPTOM_LABELS.has(s))
+  const customConditions = conditions.filter(
+    c => c !== NO_CONDITION_KEY && !KNOWN_CONDITION_LABELS.has(c)
+  )
 
   return (
     <div className="wizard">
@@ -502,7 +543,7 @@ export default function Chat({ lang, setLang }) {
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
-            <button type="button" className="btn-primary" onClick={goNext}>{t.nextBtn}</button>
+            <button type="button" className="btn-primary" onClick={goNext} disabled={!canProceedStep1}>{t.nextBtn}</button>
           </div>
         </div>
       )}
@@ -525,7 +566,7 @@ export default function Chat({ lang, setLang }) {
             </div>
           </div>
           <div className="field-group">
-            <label>{t.genderLbl} <span className="opt">{t.optional}</span></label>
+            <label>{t.genderLbl} <span className="req">*</span></label>
             <div className="choice-row">
               {['male', 'female', 'other'].map(g => (
                 <button
@@ -556,7 +597,7 @@ export default function Chat({ lang, setLang }) {
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
-            <button type="button" className="btn-primary" onClick={goNext}>{t.nextBtn}</button>
+            <button type="button" className="btn-primary" onClick={goNext} disabled={!canProceedStep2}>{t.nextBtn}</button>
           </div>
         </div>
       )}
@@ -576,14 +617,42 @@ export default function Chat({ lang, setLang }) {
                 <span aria-hidden="true">{c.icon}</span> {t.conditions[c.label] || c.label}
               </button>
             ))}
+            <button
+              type="button"
+              className={`chip${conditions.includes(NO_CONDITION_KEY) ? ' sel' : ''}`}
+              onClick={() => toggleCondition(NO_CONDITION_KEY)}
+            >
+              <span aria-hidden="true">❔</span> {t.noConditionsCard || t.skipConditions || "No condition / I don't know"}
+            </button>
           </div>
+          <div className="custom-row">
+            <input
+              type="text"
+              className="custom-input"
+              placeholder={t.otherConditionPlaceholder || 'Any other condition to share...'}
+              value={customConditionInput}
+              onChange={e => setCustomConditionInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCondition() } }}
+            />
+            <button type="button" className="btn-add" onClick={addCustomCondition}>{t.addBtn}</button>
+          </div>
+          {customConditions.length > 0 && (
+            <div className="custom-tags">
+              {customConditions.map(c => (
+                <span key={c} className="custom-tag">
+                  {c}
+                  <button type="button" onClick={() => toggleCondition(c)} aria-label={`Remove ${c}`}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
           {error && <p className="wiz-error" role="alert">{error}</p>}
           <div className="wiz-nav">
             <button type="button" className="btn-back" onClick={goBack}>{t.backBtn}</button>
             <button
               className="btn-primary"
               type="button"
-              disabled={loading}
+              disabled={loading || !canSubmitStep3}
               onClick={() => submit()}
             >
               {loading
@@ -591,9 +660,6 @@ export default function Chat({ lang, setLang }) {
                 : t.getAssessment}
             </button>
           </div>
-          <button type="button" className="btn-skip" onClick={() => submit([])}>
-            {t.skipConditions}
-          </button>
         </div>
       )}
     </div>

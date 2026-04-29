@@ -6,7 +6,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/consult': {
+      '/chat': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/session': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
@@ -16,7 +20,11 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
-      '/consult': {
+      '/chat': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
+      '/session': {
         target: 'http://backend:8000',
         changeOrigin: true,
       },
