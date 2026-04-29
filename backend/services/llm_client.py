@@ -23,7 +23,7 @@ Environment Variables (via settings):
 
 Example:
     Generate a medical triage response:
-    
+
     >>> from services.llm_client import generate
     >>> response = await generate("Patient reports fever and cough for 3 days")
     >>> result = json.loads(response)
@@ -42,15 +42,15 @@ logger = logging.getLogger(__name__)
 
 async def _local_heuristic_response(prompt: str) -> str:
     """Generate a deterministic medical triage response using keyword matching.
-    
+
     This is a fallback function used when no LLM API is available (e.g., offline mode
     or missing API key). It performs simple keyword-based heuristics to classify symptom
     severity and recommend appropriate actions. The output is formatted as JSON to match
     the LLM API response structure.
-    
+
     Args:
         prompt (str): The patient symptom description or triage query.
-    
+
     Returns:
         str: A JSON-formatted string containing triage result with keys:
             - severity: One of "low", "medium", or "high"
@@ -58,7 +58,7 @@ async def _local_heuristic_response(prompt: str) -> str:
             - recommended_action: Text recommendation for the patient
             - urgency: Timeframe for seeking medical attention
             - notes: Explanation that this is a heuristic fallback response
-    
+
     Note:
         This is purely for MVP functionality and testing. Real medical triage
         should always use a qualified LLM or clinical professional.
@@ -66,7 +66,16 @@ async def _local_heuristic_response(prompt: str) -> str:
     text = prompt.lower()
     severity = "low"
     # Classify severity as "high" if critical symptoms are detected
-    if any(k in text for k in ["chest pain", "shortness of breath", "unconscious", "severe bleeding", "stroke"]):
+    if any(
+        k in text
+        for k in [
+            "chest pain",
+            "shortness of breath",
+            "unconscious",
+            "severe bleeding",
+            "stroke",
+        ]
+    ):
         severity = "high"
     # Classify as "medium" for moderate symptoms requiring same-day medical attention
     elif any(k in text for k in ["fever", "severe pain", "vomiting", "dehydration"]):
@@ -99,12 +108,12 @@ async def _local_heuristic_response(prompt: str) -> str:
 
 async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2) -> str:
     """Generate text completion using an OpenAI-compatible LLM API or fallback heuristic.
-    
+
     Calls the configured LLM endpoint to generate structured medical triage responses.
     If no API key is configured, automatically uses a keyword-based heuristic for offline
     functionality. Handles multiple LLM response formats and recovers gracefully from
     network or parsing errors.
-    
+
     Args:
         prompt (str): The input prompt for text generation (typically a patient symptom
             description for medical triage).
@@ -113,16 +122,16 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2)
         temperature (float, optional): Sampling temperature for response randomness.
             Lower values (e.g., 0.2) produce more deterministic responses.
             Default is 0.2 (deterministic).
-    
+
     Returns:
         str: The generated text response. Format depends on the LLM API being used:
             - For OpenAI-compatible APIs: typically raw text content
             - For heuristic fallback: JSON-formatted triage result
-    
+
     Raises:
         None: This function never raises exceptions. Network/parsing failures are
         logged and the function returns a heuristic fallback response instead.
-    
+
     Note:
         Response format varies by LLM provider. Consumers should handle both
         plain text and JSON-formatted responses.
@@ -133,7 +142,10 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2)
 
     # Build request to OpenAI-compatible LLM endpoint
     url = settings.LLM_API_URL.rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
+        "Content-Type": "application/json",
+    }
     payload = {
         "model": settings.MODEL_NAME,
         "messages": [{"role": "user", "content": prompt}],
@@ -146,31 +158,43 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2)
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             body = resp.json()
-            
+
             # Parse response: support multiple LLM API response formats
             if isinstance(body, dict):
                 # Format 1: Direct 'output' field (e.g., some local Ollama variants)
                 if "output" in body and isinstance(body["output"], str):
                     return body["output"]
                 # Format 2: 'outputs' array with 'content' field (e.g., some inference servers)
-                if "outputs" in body and isinstance(body["outputs"], list) and body["outputs"]:
+                if (
+                    "outputs" in body
+                    and isinstance(body["outputs"], list)
+                    and body["outputs"]
+                ):
                     first = body["outputs"][0]
                     if isinstance(first, dict) and "content" in first:
                         return first["content"]
                     return json.dumps(first)
                 # Format 3: OpenAI-compatible 'choices' with 'text' or 'message' field
-                if "choices" in body and isinstance(body["choices"], list) and body["choices"]:
+                if (
+                    "choices" in body
+                    and isinstance(body["choices"], list)
+                    and body["choices"]
+                ):
                     ch = body["choices"][0]
                     # Extract from choice.text (older completion format)
                     if isinstance(ch, dict) and "text" in ch:
                         return ch["text"]
                     # Extract from choice.message.content (chat completion format)
-                    if isinstance(ch, dict) and "message" in ch and isinstance(ch["message"], dict):
+                    if (
+                        isinstance(ch, dict)
+                        and "message" in ch
+                        and isinstance(ch["message"], dict)
+                    ):
                         return ch["message"].get("content", "")
 
-            # Last resort: return raw response body as string
-            return resp.text
-        
+            # Last resort: decode raw bytes as UTF-8 to preserve non-ASCII text
+            return resp.content.decode("utf-8", errors="replace")
+
         except Exception as e:
             # Log error and return deterministic fallback response
             logger.exception("LLM API call failed: %s", e)
