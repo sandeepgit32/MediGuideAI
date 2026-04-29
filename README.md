@@ -28,7 +28,7 @@ MediGuideAI is a production-oriented MVP that helps patients in low-resource are
 │           React + Vite Frontend             │
 │                (port 3000)                  │
 └────────────────────┬────────────────────────┘
-                     │ HTTP /consult
+                     │ HTTP /chat (multi-turn)
 ┌────────────────────▼────────────────────────┐
 │           FastAPI Backend (port 8000)       │
 │                                             │
@@ -40,16 +40,16 @@ MediGuideAI is a production-oriented MVP that helps patients in low-resource are
 │  └──────────────────────────────────────┘   │
 │                                             │
 │  ┌───────────────┐   ┌───────────────────┐  │
-│  │  Chroma       │   │     MongoDB       │  │
-│  │  RAG + Mem0   │   │  Consultation     │  │
-│  │  agent memory │   │  audit store      │  │
+│  │  Chroma       │   │   In-memory       │  │
+│  │  RAG + Mem0   │   │  session store    │  │
+│  │  agent memory │   │  (TTL: 30 min)    │  │
 │  └───────────────┘   └───────────────────┘  │
 └─────────────────────────────────────────────┘
 ```
 
 LLM inference is handled via any **OpenAI-compatible API** (configurable via `LLM_API_URL`; defaults to Groq). The model name is set with `MODEL_NAME`. When no API key is set the system falls back to a deterministic keyword-based heuristic so the MVP remains functional for local testing.
 
-Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Docker-hosted **Chroma** server (dedicated `mem0_agent_memory` collection). Patient consultation records are stored separately in **MongoDB** as a durable audit trail.
+Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Docker-hosted **Chroma** server (dedicated `mem0_agent_memory` collection). Active consultation sessions are held in an **in-memory session store** (TTL: 30 minutes); no data survives a server restart.
 
 ---
 
@@ -64,9 +64,9 @@ MediGuideAI/
 │   ├── schemas/             # Pydantic request/response models
 │   ├── services/
 │   │   ├── agent_memory.py      # Mem0 OSS agent memory (Chroma-backed)
-│   │   ├── consultation_store.py# MongoDB consultation audit store
+│   │   ├── session_store.py     # In-memory multi-turn session store (TTL 30 min)
 │   │   ├── rag_service.py       # Chroma RAG over clinical guidelines
-│   │   └── llm_client.py        # OpenAI-compatible LLM HTTP client
+│   │   └── llm_client.py        # OpenAI-compatible LLM HTTP client (UTF-8 safe)
 │   ├── utils/               # Prompt builders
 │   ├── config.py            # Settings loaded from environment variables
 │   ├── main.py              # FastAPI application entry point
@@ -140,11 +140,6 @@ MEM0_EMBED_API_URL=https://api.gemini.com/v1
 MEM0_EMBED_API_KEY=<YOUR_API_KEY_HERE>
 MEM0_EMBED_MODEL=models/gemini-2.0-pro-embed-text-001
 
-# ── Consultation Storage (MongoDB) ────────────────────────────────────────────
-# MongoDB stores raw patient consultation records (not agent memory).
-MONGODB_URI=mongodb://mongo:27017
-MONGODB_DB=mguide
-MONGODB_CONSULTATIONS_COLLECTION=consultations
 
 # ── RAG ───────────────────────────────────────────────────────────────────────
 RAG_TOP_K=3
@@ -192,20 +187,24 @@ Services started by Docker Compose:
 | `backend` | `8000` | FastAPI application |
 | `frontend` | `3000` | React/Nginx UI |
 | `chroma` | `8001` | Chroma vector DB (RAG + Mem0 agent memory) |
-| `mongo` | `27017` | MongoDB (consultation record storage) |
 
 ---
 
 ## API Reference
 
-### `POST /consult`
+All consultation interactions go through a **session-based multi-turn API**. Each session is identified by a `session_id` UUID returned on the first request and is held in memory for 30 minutes of inactivity.
 
-Submit patient symptoms and receive a structured triage assessment.
+### `POST /chat`
+
+Unified endpoint for all interaction types, distinguished by the `type` field.
+
+#### `type: "initial"` — Start a new consultation
 
 **Request body**
 
 ```json
 {
+  "type": "initial",
   "age": 45,
   "gender": "male",
   "symptoms": ["chest pain", "shortness of breath"],
@@ -217,27 +216,60 @@ Submit patient symptoms and receive a structured triage assessment.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `type` | `"initial"` | Yes | Interaction type |
 | `age` | integer (0-120) | Yes | Patient age |
 | `gender` | string | No | Patient gender |
 | `symptoms` | string[] (min 1) | Yes | List of symptom phrases |
 | `duration` | string | Yes | How long symptoms have been present |
 | `existing_conditions` | string[] | No | Pre-existing conditions |
-| `language` | string (ISO 639-1) | No | User's language code; auto-detected if omitted |
+| `language` | string (ISO 639-1) | No | Patient language; auto-detected if omitted |
 
-**Response**
+#### `type: "answer"` — Reply to a clarifying question
 
 ```json
 {
+  "type": "answer",
+  "session_id": "<uuid>",
+  "message": "It started suddenly after climbing stairs."
+}
+```
+
+#### `type: "followup"` — Ask a follow-up question after a result
+
+```json
+{
+  "type": "followup",
+  "session_id": "<uuid>",
+  "message": "What warning signs should I watch for?"
+}
+```
+
+**Response** (all types)
+
+The `type` field in the response indicates which fields are populated:
+
+| Response `type` | Meaning | Populated fields |
+|----------------|---------|------------------|
+| `question` | Agent needs one more clarification | `session_id`, `question` |
+| `result` | Triage result ready | `session_id`, `severity`, `possible_conditions`, `recommended_action`, `urgency`, `notes`, `safety` |
+| `answer` | Follow-up answer | `session_id`, `answer` |
+
+**Example `result` response**
+
+```json
+{
+  "type": "result",
+  "session_id": "3f8a1b2c-...",
   "severity": "high",
-  "possible_conditions": ["acute coronary syndrome", "pulmonary embolism"],
-  "recommended_action": "Seek immediate medical help (emergency services).",
+  "possible_conditions": ["may suggest acute cardiac event"],
+  "recommended_action": "Seek immediate medical help at the nearest emergency facility.",
   "urgency": "immediate",
+  "notes": null,
   "safety": {
     "is_safe": true,
     "risk_flags": [],
     "override_message": null
-  },
-  "emergency_flags": ["chest_pain", "breathing"]
+  }
 }
 ```
 
@@ -249,6 +281,12 @@ Submit patient symptoms and receive a structured triage assessment.
 | `medium` | Consult a clinician within 24 hours |
 | `high` | Seek emergency medical care immediately |
 
+### `DELETE /session/{session_id}`
+
+Explicitly end a session and clear its Mem0 memory. Called automatically by the frontend when starting a new consultation.
+
+Returns `{"ok": true}`.
+
 ### `GET /`
 
 Health check. Returns `{"ok": true, "service": "MediGuideAI"}`.
@@ -257,7 +295,7 @@ Health check. Returns `{"ok": true, "service": "MediGuideAI"}`.
 
 ## Agent Pipeline
 
-Each `/consult` request passes through a sequential agent pipeline:
+Each `POST /chat` request passes through a sequential agent pipeline. The triage agent may ask up to 3 clarifying questions before producing a result, maintaining full conversation history across turns within the session.
 
 ```
 PatientInput
