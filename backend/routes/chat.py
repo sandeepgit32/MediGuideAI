@@ -97,6 +97,8 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         question_translated = await _translate_if_needed(
             resp.question, "en", session.language
         )
+        logger.info("AI Question (en): %s", resp.question)
+        logger.info("AI Question (translated): %s", question_translated)
         # Record in conversation history (in English for agent processing)
         session.conversation.append({"role": "assistant", "content": resp.question})
         session.clarification_count += 1
@@ -143,6 +145,9 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         f"Triage: severity={triage_output.severity}, "
         f"action={triage_output.recommended_action}, urgency={triage_output.urgency}"
     )
+    
+    logger.info("AI Triage Result: %s", mem0_assistant)
+    
     session.conversation.append({"role": "assistant", "content": mem0_assistant})
     await _mem0_add(session.session_id, "user", mem0_user)
     await _mem0_add(session.session_id, "assistant", mem0_assistant)
@@ -227,6 +232,7 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             f"symptoms={', '.join(symptoms_en)}, duration={payload.duration}, "
             f"existing_conditions={session.existing_conditions or 'none'}"
         )
+        logger.info("User prompt (initial): %s", patient_intro)
         session.conversation.append({"role": "user", "content": patient_intro})
         await _mem0_add(session.session_id, "user", patient_intro)
 
@@ -255,6 +261,8 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         answer_en = await _translate_if_needed(
             payload.message.strip(), session.language, "en"
         )
+        logger.info("User input (answer - original): %s", payload.message.strip())
+        logger.info("User input (answer - en): %s", answer_en)
         session.conversation.append({"role": "user", "content": answer_en})
         await _mem0_add(session.session_id, "user", answer_en)
 
@@ -281,8 +289,8 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
         # Translate question to English for processing
         question_en = await _translate_if_needed(
-            payload.message.strip(), session.language, "en"
-        )
+        logger.info("User follow-up question (original): %s", payload.message.strip())
+        logger.info("User follow-up question (en): %s", question_en)
 
         # Run follow-up agent (English)
         answer_en = await answer_followup(
@@ -292,7 +300,11 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             rag_contexts=session.rag_contexts,
             language="en",
         )
+        logger.info("AI follow-up answer (en): %s", answer_en)
 
+        # Translate answer back to patient language
+        answer_translated = await _translate_if_needed(answer_en, "en", session.language)
+        logger.info("AI follow-up answer (translated): %s", answer_translated
         # Translate answer back to patient language
         answer_translated = await _translate_if_needed(answer_en, "en", session.language)
 

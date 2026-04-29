@@ -155,27 +155,33 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
+            logger.info(
+                "Outbound LLM Request to %s for model %s", url, settings.MODEL_NAME
+            )
+            logger.debug("LLM Prompt: %s", prompt)
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             body = resp.json()
 
             # Parse response: support multiple LLM API response formats
+            response_text = ""
             if isinstance(body, dict):
                 # Format 1: Direct 'output' field (e.g., some local Ollama variants)
                 if "output" in body and isinstance(body["output"], str):
-                    return body["output"]
+                    response_text = body["output"]
                 # Format 2: 'outputs' array with 'content' field (e.g., some inference servers)
-                if (
+                elif (
                     "outputs" in body
                     and isinstance(body["outputs"], list)
                     and body["outputs"]
                 ):
                     first = body["outputs"][0]
                     if isinstance(first, dict) and "content" in first:
-                        return first["content"]
-                    return json.dumps(first)
+                        response_text = first["content"]
+                    else:
+                        response_text = json.dumps(first)
                 # Format 3: OpenAI-compatible 'choices' with 'text' or 'message' field
-                if (
+                elif (
                     "choices" in body
                     and isinstance(body["choices"], list)
                     and body["choices"]
@@ -183,17 +189,21 @@ async def generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2)
                     ch = body["choices"][0]
                     # Extract from choice.text (older completion format)
                     if isinstance(ch, dict) and "text" in ch:
-                        return ch["text"]
+                        response_text = ch["text"]
                     # Extract from choice.message.content (chat completion format)
-                    if (
+                    elif (
                         isinstance(ch, dict)
                         and "message" in ch
                         and isinstance(ch["message"], dict)
                     ):
-                        return ch["message"].get("content", "")
+                        response_text = ch["message"].get("content", "")
 
             # Last resort: decode raw bytes as UTF-8 to preserve non-ASCII text
-            return resp.content.decode("utf-8", errors="replace")
+            if not response_text:
+                response_text = resp.content.decode("utf-8", errors="replace")
+
+            logger.debug("LLM Response: %s", response_text)
+            return response_text
 
         except Exception as e:
             # Log error and return deterministic fallback response
