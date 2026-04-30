@@ -54,6 +54,7 @@ router = APIRouter()
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _translate_if_needed(text: str, src_lang: str, target_lang: str) -> str:
     """Translate *text* from *src_lang* to *target_lang* if they differ."""
     if src_lang == target_lang or not text.strip():
@@ -105,7 +106,9 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         await _mem0_add(session.session_id, "assistant", resp.question)
         logger.info(
             "Triage question %d/%d for session %s",
-            session.clarification_count, MAX_CLARIFICATIONS, session.session_id,
+            session.clarification_count,
+            MAX_CLARIFICATIONS,
+            session.session_id,
         )
         return ChatResponse(
             type="question",
@@ -145,16 +148,19 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         f"Triage: severity={triage_output.severity}, "
         f"action={triage_output.recommended_action}, urgency={triage_output.urgency}"
     )
-    
+
     logger.info("AI Triage Result: %s", mem0_assistant)
-    
+
     session.conversation.append({"role": "assistant", "content": mem0_assistant})
     await _mem0_add(session.session_id, "user", mem0_user)
     await _mem0_add(session.session_id, "assistant", mem0_assistant)
 
     logger.info(
         "Triage result for session %s: severity=%r urgency=%r safe=%s",
-        session.session_id, triage_output.severity, triage_output.urgency, safety.is_safe,
+        session.session_id,
+        triage_output.severity,
+        triage_output.urgency,
+        safety.is_safe,
     )
     return ChatResponse(
         type="result",
@@ -171,6 +177,7 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
 # ---------------------------------------------------------------------------
 # POST /chat
 # ---------------------------------------------------------------------------
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest) -> ChatResponse:
@@ -202,14 +209,20 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             else payload.language
         )
         src_lang = detected or settings.DEFAULT_LANGUAGE
-        logger.info("New chat session: lang=%r age=%s symptoms=%d",
-                    src_lang, payload.age, len(payload.symptoms))
+        logger.info(
+            "New chat session: lang=%r age=%s symptoms=%d",
+            src_lang,
+            payload.age,
+            len(payload.symptoms),
+        )
 
         # Translate symptoms to English
         symptoms_en_str = joined_symptoms
         if src_lang != "en":
             symptoms_en_str = await translate_text(joined_symptoms, target="en")
-        symptoms_en = [s.strip() for s in symptoms_en_str.split(";") if s.strip()] or [symptoms_en_str]
+        symptoms_en = [s.strip() for s in symptoms_en_str.split(";") if s.strip()] or [
+            symptoms_en_str
+        ]
 
         # RAG
         await rag_service.initialize()
@@ -243,7 +256,9 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         if not payload.session_id:
             raise HTTPException(status_code=422, detail="'answer' requires session_id.")
         if not payload.message or not payload.message.strip():
-            raise HTTPException(status_code=422, detail="'answer' requires a non-empty message.")
+            raise HTTPException(
+                status_code=422, detail="'answer' requires a non-empty message."
+            )
 
         session = get_session(payload.session_id)
         if session is None:
@@ -271,9 +286,13 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     # ── FOLLOWUP ─────────────────────────────────────────────────────────────
     if payload.type == "followup":
         if not payload.session_id:
-            raise HTTPException(status_code=422, detail="'followup' requires session_id.")
+            raise HTTPException(
+                status_code=422, detail="'followup' requires session_id."
+            )
         if not payload.message or not payload.message.strip():
-            raise HTTPException(status_code=422, detail="'followup' requires a non-empty message.")
+            raise HTTPException(
+                status_code=422, detail="'followup' requires a non-empty message."
+            )
 
         session = get_session(payload.session_id)
         if session is None:
@@ -289,6 +308,8 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
         # Translate question to English for processing
         question_en = await _translate_if_needed(
+            payload.message.strip(), session.language, "en"
+        )
         logger.info("User follow-up question (original): %s", payload.message.strip())
         logger.info("User follow-up question (en): %s", question_en)
 
@@ -303,10 +324,10 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         logger.info("AI follow-up answer (en): %s", answer_en)
 
         # Translate answer back to patient language
-        answer_translated = await _translate_if_needed(answer_en, "en", session.language)
-        logger.info("AI follow-up answer (translated): %s", answer_translated
-        # Translate answer back to patient language
-        answer_translated = await _translate_if_needed(answer_en, "en", session.language)
+        answer_translated = await _translate_if_needed(
+            answer_en, "en", session.language
+        )
+        logger.info("AI follow-up answer (translated): %s", answer_translated)
 
         # Update conversation history and mem0
         session.conversation.append({"role": "user", "content": question_en})
@@ -322,12 +343,15 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             answer=answer_translated,
         )
 
-    raise HTTPException(status_code=422, detail=f"Unknown request type: {payload.type!r}")
+    raise HTTPException(
+        status_code=422, detail=f"Unknown request type: {payload.type!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # DELETE /session/{session_id}
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/session/{session_id}")
 async def end_session(session_id: str) -> Dict:
