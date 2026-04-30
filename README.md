@@ -82,7 +82,7 @@ MediGuideAI/
 │   │   ├── models.py            # User ORM model
 │   │   └── __init__.py          # init_db() — creates tables on startup
 │   ├── routes/
-│   │   ├── auth.py              # /auth/register, /auth/login, /auth/change-password
+│   │   ├── auth.py              # /auth/register, /auth/login, /auth/change-password, /auth/history
 │   │   └── chat.py              # /chat (protected), /session/{id}
 │   ├── schemas/             # Pydantic request/response models
 │   │   └── user.py              # UserCreate, UserResponse, Token, PasswordChange
@@ -99,7 +99,7 @@ MediGuideAI/
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # Chat UI component
+│   │   ├── components/      # Chat, History, and Login UI components
 │   │   └── services/        # Axios API client
 │   ├── nginx.conf           # nginx config (listens on port 3000)
 │   ├── index.html
@@ -283,6 +283,23 @@ Requires a valid Bearer token.
 ```
 
 Returns `{ "message": "Password updated successfully" }`.
+
+#### `GET /auth/history` — Get patient history
+
+Requires a valid Bearer token.
+
+Returns a list of Mem0 memories for the current patient:
+
+```json
+{
+  "memories": [
+    {
+      "memory": "Patient reported recurring cough...",
+      "created_at": "2026-04-30T10:00:00Z"
+    }
+  ]
+}
+```
 
 ---
 
