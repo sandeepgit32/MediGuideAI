@@ -23,10 +23,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
+from .routes.auth import auth_router
 from .routes.chat import router as chat_router
 from .services.agent_memory import memory_service
 from .services.rag_service import rag_service
 from .services.session_store import start_eviction_task, stop_eviction_task
+from .database import init_db
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -66,6 +68,13 @@ async def lifespan(app: FastAPI):
         logger.info("RAG service initialized")
     except Exception:
         logger.exception("RAG service initialization failed")
+
+    try:
+        init_db()
+        logger.info("Database initialized")
+    except Exception:
+        logger.exception("Database initialization failed")
+
     try:
         await memory_service.initialize()
         logger.info("Agent memory service initialized")
@@ -117,7 +126,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the chat routes (POST /chat, DELETE /session/{id})
+# Include the routes
+app.include_router(auth_router)
 app.include_router(chat_router)
 
 

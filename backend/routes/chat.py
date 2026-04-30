@@ -25,7 +25,7 @@ Interaction types (``ChatRequest.type``):
 import logging
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from ..agents.language_agent import detect_language, translate_text
 from ..agents.safety_agent import assess as safety_assess
@@ -35,6 +35,8 @@ from ..agents.triage_agent import (
     triage_with_history,
 )
 from ..config import settings
+from ..database.models import User
+from .auth import get_current_user
 from ..schemas.chat import ChatRequest, ChatResponse
 from ..services.agent_memory import memory_service
 from ..services.rag_service import rag_service
@@ -62,17 +64,17 @@ async def _translate_if_needed(text: str, src_lang: str, target_lang: str) -> st
     return await translate_text(text, target=target_lang)
 
 
-async def _mem0_add(session_id: str, role: str, content: str) -> None:
+async def _mem0_add(user_id: str, role: str, content: str) -> None:
     """Best-effort: store a single message turn in Mem0."""
     try:
-        await memory_service.add_memory(
-            session_id, [{"role": role, "content": content}]
-        )
+        await memory_service.add_memory(user_id, [{"role": role, "content": content}])
     except Exception:
-        logger.debug("mem0 add failed for session %s (non-blocking)", session_id)
+        logger.debug("mem0 add failed for user %s (non-blocking)", user_id)
 
 
-async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
+async def _run_triage_and_respond(
+    session: SessionData, current_user: User
+) -> ChatResponse:
     """Run the triage agent against the current session state.
 
     Branches on agent response:
@@ -81,6 +83,16 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
     - ``result``   → run safety agent, apply overrides, translate recommended
       action, update session, store in mem0, return ChatResponse(type="result").
     """
+
+    # Retrieve past patient history from mem0 across sessions
+    try:
+        mem0_history = await memory_service.search_memory(
+            str(current_user.id), " ".join(session.symptoms_en)
+        )
+    except Exception:
+        logger.warning(f"Failed to fetch mem0_history for {current_user.id}")
+        mem0_history = []
+
     resp = await triage_with_history(
         age=session.age,
         gender=session.gender,
@@ -91,6 +103,7 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         conversation=session.conversation,
         clarification_count=session.clarification_count,
         language=session.language,
+        mem0_history=mem0_history,
     )
 
     if resp.response_type == "question" and resp.question:
@@ -103,7 +116,7 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
         # Record in conversation history (in English for agent processing)
         session.conversation.append({"role": "assistant", "content": resp.question})
         session.clarification_count += 1
-        await _mem0_add(session.session_id, "assistant", resp.question)
+        await _mem0_add(str(current_user.id), "assistant", resp.question)
         logger.info(
             "Triage question %d/%d for session %s",
             session.clarification_count,
@@ -152,8 +165,8 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
     logger.info("AI Triage Result: %s", mem0_assistant)
 
     session.conversation.append({"role": "assistant", "content": mem0_assistant})
-    await _mem0_add(session.session_id, "user", mem0_user)
-    await _mem0_add(session.session_id, "assistant", mem0_assistant)
+    await _mem0_add(str(current_user.id), "user", mem0_user)
+    await _mem0_add(str(current_user.id), "assistant", mem0_assistant)
 
     logger.info(
         "Triage result for session %s: severity=%r urgency=%r safe=%s",
@@ -180,7 +193,9 @@ async def _run_triage_and_respond(session: SessionData) -> ChatResponse:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(payload: ChatRequest) -> ChatResponse:
+async def chat(
+    payload: ChatRequest, current_user: User = Depends(get_current_user)
+) -> ChatResponse:
     """Unified multi-turn consultation endpoint.
 
     Handles three interaction types via ``payload.type``:
@@ -247,9 +262,9 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         )
         logger.info("User prompt (initial): %s", patient_intro)
         session.conversation.append({"role": "user", "content": patient_intro})
-        await _mem0_add(session.session_id, "user", patient_intro)
+        await _mem0_add(str(current_user.id), "user", patient_intro)
 
-        return await _run_triage_and_respond(session)
+        return await _run_triage_and_respond(session, current_user)
 
     # ── ANSWER ───────────────────────────────────────────────────────────────
     if payload.type == "answer":
@@ -279,9 +294,9 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         logger.info("User input (answer - original): %s", payload.message.strip())
         logger.info("User input (answer - en): %s", answer_en)
         session.conversation.append({"role": "user", "content": answer_en})
-        await _mem0_add(session.session_id, "user", answer_en)
+        await _mem0_add(str(current_user.id), "user", answer_en)
 
-        return await _run_triage_and_respond(session)
+        return await _run_triage_and_respond(session, current_user)
 
     # ── FOLLOWUP ─────────────────────────────────────────────────────────────
     if payload.type == "followup":
@@ -333,8 +348,8 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         session.conversation.append({"role": "user", "content": question_en})
         session.conversation.append({"role": "assistant", "content": answer_en})
         session.touch()
-        await _mem0_add(session.session_id, "user", question_en)
-        await _mem0_add(session.session_id, "assistant", answer_en)
+        await _mem0_add(str(current_user.id), "user", question_en)
+        await _mem0_add(str(current_user.id), "assistant", answer_en)
 
         logger.info("Follow-up answered for session %s", session.session_id)
         return ChatResponse(
@@ -354,19 +369,17 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
 
 @router.delete("/session/{session_id}")
-async def end_session(session_id: str) -> Dict:
+async def end_session(
+    session_id: str, current_user: User = Depends(get_current_user)
+) -> Dict:
     """Explicitly end a consultation session and clear its Mem0 memories.
 
     This is called when the user starts a new conversation. Clears session
-    state from the in-memory store and removes associated mem0 vectors.
+    state from the in-memory store. Note: mem0 memories are kept cross-session
+    so we don't clear them here anymore.
 
     Returns ``{"ok": true}`` whether or not the session existed.
     """
     existed = delete_session(session_id)
-    # Best-effort: clear mem0 memories
-    try:
-        await memory_service.delete_session_memory(session_id)
-    except Exception:
-        logger.debug("mem0 cleanup failed for session %s (non-blocking)", session_id)
     logger.info("Session ended: %s (existed=%s)", session_id, existed)
     return {"ok": True}

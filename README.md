@@ -4,6 +4,8 @@
 
 MediGuideAI is a production-oriented MVP that helps patients in low-resource areas describe their symptoms and receive structured, safety-reviewed triage guidance — in their own language. It deliberately avoids providing diagnoses or prescriptions, and always defers to clinical professionals for final decisions.
 
+Patients register and sign in to receive a persistent identity across multiple consultations. The system uses this identity to build a cross-session memory of reported conditions, allergies, and past triage outcomes, which it feeds back into future consultations to provide personalised, context-aware triage.
+
 ---
 
 ## Table of Contents
@@ -28,28 +30,43 @@ MediGuideAI is a production-oriented MVP that helps patients in low-resource are
 │           React + Vite Frontend             │
 │                (port 3000)                  │
 └────────────────────┬────────────────────────┘
-                     │ HTTP /chat (multi-turn)
+                     │ HTTP (JWT Bearer token required for /chat)
 ┌────────────────────▼────────────────────────┐
 │           FastAPI Backend (port 8000)       │
 │                                             │
 │  ┌──────────────────────────────────────┐   │
-│  │            Agent Pipeline            │   │
-│  │                                      │   │
-│  │  Language Agent --> Triage Agent --> │   │
-│  │  Escalation Agent --> Safety Agent   │   │
+│  │         Auth Routes (/auth/*)        │   │
+│  │  register · login · change-password  │   │
 │  └──────────────────────────────────────┘   │
 │                                             │
-│  ┌───────────────┐   ┌───────────────────┐  │
-│  │  Chroma       │   │   In-memory       │  │
-│  │  RAG + Mem0   │   │  session store    │  │
-│  │  agent memory │   │  (TTL: 30 min)    │  │
-│  └───────────────┘   └───────────────────┘  │
+│  ┌──────────────────────────────────────┐   │
+│  │            Agent Pipeline            │   │
+│  │  (protected — JWT required)          │   │
+│  │                                      │   │
+│  │  Language Agent --> Triage Agent --> │   │
+│  │               Safety Agent           │   │
+│  └──────────────────────────────────────┘   │
+│                                             │
+│  ┌──────────────┐  ┌───────────────────┐    │
+│  │  Chroma      │  │   In-memory       │    │
+│  │  RAG + Mem0  │  │  session store    │    │
+│  │  (per-user)  │  │  (TTL: 30 min)    │    │
+│  └──────────────┘  └───────────────────┘    │
 └─────────────────────────────────────────────┘
+         │                   │
+         ▼                   ▼
+  ┌────────────┐      ┌─────────────┐
+  │   MySQL    │      │   Chroma    │
+  │  (port     │      │  (port      │
+  │   3307)    │      │   8001)     │
+  └────────────┘      └─────────────┘
 ```
 
 LLM inference is handled via any **OpenAI-compatible API** (configurable via `LLM_API_URL`; defaults to Groq). The model name is set with `MODEL_NAME`. When no API key is set the system falls back to a deterministic keyword-based heuristic so the MVP remains functional for local testing.
 
-Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Docker-hosted **Chroma** server (dedicated `mem0_agent_memory` collection). Active consultation sessions are held in an **in-memory session store** (TTL: 30 minutes); no data survives a server restart.
+User accounts (email + bcrypt-hashed password) are stored in **MySQL**. Authentication uses **JWT Bearer tokens** (HS256, 7-day expiry). All chat endpoints require a valid token.
+
+Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Docker-hosted **Chroma** server (dedicated `mem0_agent_memory` collection). Memory is keyed by the authenticated **user ID** (not the session ID), so facts extracted from previous consultations persist across all future sessions for the same user. This enables smart follow-ups, awareness of chronic conditions, and allergy safety checks. Active consultation sessions are held in an **in-memory session store** (TTL: 30 minutes); session data does not survive a server restart, but Mem0 memories are durable.
 
 ---
 
@@ -58,16 +75,25 @@ Agent memory is provided by **Mem0 OSS** (`Memory.from_config`) backed by the Do
 ```
 MediGuideAI/
 ├── backend/
-│   ├── agents/              # Pydantic-AI agents (triage, safety, escalation, language)
+│   ├── agents/              # Pydantic-AI agents (triage, safety, language)
 │   ├── data/                # clinical guidelines seed data (clinical_guideline.json)
-│   ├── routes/              # FastAPI route handlers
+│   ├── database/
+│   │   ├── database.py          # SQLAlchemy engine and session factory
+│   │   ├── models.py            # User ORM model
+│   │   └── __init__.py          # init_db() — creates tables on startup
+│   ├── routes/
+│   │   ├── auth.py              # /auth/register, /auth/login, /auth/change-password
+│   │   └── chat.py              # /chat (protected), /session/{id}
 │   ├── schemas/             # Pydantic request/response models
+│   │   └── user.py              # UserCreate, UserResponse, Token, PasswordChange
 │   ├── services/
-│   │   ├── agent_memory.py      # Mem0 OSS agent memory (Chroma-backed)
+│   │   ├── agent_memory.py      # Mem0 OSS agent memory (Chroma-backed, user-scoped)
 │   │   ├── session_store.py     # In-memory multi-turn session store (TTL 30 min)
 │   │   ├── rag_service.py       # Chroma RAG over clinical guidelines
 │   │   └── llm_client.py        # OpenAI-compatible LLM HTTP client (UTF-8 safe)
-│   ├── utils/               # Prompt builders
+│   ├── utils/
+│   │   ├── prompts.py           # Prompt builders (includes patient history injection)
+│   │   └── security.py          # JWT creation/verification + bcrypt helpers
 │   ├── config.py            # Settings loaded from environment variables
 │   ├── main.py              # FastAPI application entry point
 │   └── Dockerfile
@@ -128,7 +154,7 @@ CHROMA_COLLECTION_NAME=clinical_guidelines
 # Mem0 OSS runs locally; no cloud API key is required.
 #
 # LLM used by Mem0 for fact extraction. Defaults to MODEL_NAME if not set.
-MEM0_LLM_MODEL=<YOUR_API_KEY_HERE>
+MEM0_LLM_MODEL=<YOUR_MODEL_NAME_HERE>
 
 # Embedder for vectorising memories. Groq does not provide an embeddings
 # endpoint, so configure a separate OpenAI-compatible provider here.
@@ -140,6 +166,18 @@ MEM0_EMBED_API_URL=https://api.gemini.com/v1
 MEM0_EMBED_API_KEY=<YOUR_API_KEY_HERE>
 MEM0_EMBED_MODEL=models/gemini-2.0-pro-embed-text-001
 
+# ── MySQL (User Accounts) ─────────────────────────────────────────────────────
+# Set automatically by docker-compose. Override when using an external MySQL server.
+MYSQL_HOST=mysql
+MYSQL_PORT=3306
+MYSQL_USER=mediguide
+MYSQL_PASSWORD=password
+MYSQL_DATABASE=mediguideai
+MYSQL_ROOT_PASSWORD=root
+
+# ── JWT Authentication ────────────────────────────────────────────────────────
+# Secret key used to sign JWT tokens. CHANGE THIS in production.
+SECRET_KEY=<YOUR_RANDOM_SECRET_HERE>
 
 # ── RAG ───────────────────────────────────────────────────────────────────────
 RAG_TOP_K=3
@@ -167,7 +205,7 @@ cd MediGuideAI
 
 # 2. Configure the environment
 cp .env.example .env
-# Edit .env and set at minimum LLM_API_KEY
+# Edit .env and set at minimum LLM_API_KEY and SECRET_KEY
 
 # 3. Build and start all services
 docker compose up --build
@@ -187,18 +225,76 @@ Services started by Docker Compose:
 | `backend` | `8000` | FastAPI application |
 | `frontend` | `3000` | React/Nginx UI |
 | `chroma` | `8001` | Chroma vector DB (RAG + Mem0 agent memory) |
+| `mysql` | `3307` | MySQL 8.0 (user account storage) |
+
+> MySQL includes a health check. The backend will wait until MySQL is fully ready before accepting requests.
 
 ---
 
 ## API Reference
 
+### Authentication
+
+All consultation endpoints (`/chat`, `/session/{id}`) require a **JWT Bearer token** in the `Authorization` header:
+
+```
+Authorization: Bearer <access_token>
+```
+
+Sign out is handled client-side by discarding the token. There is no server-side token revocation.
+
+#### `POST /auth/register` — Create a new account
+
+```json
+{
+  "email": "patient@example.com",
+  "password": "mysecurepassword"
+}
+```
+
+Returns `201 Created` with `{ "id": "...", "email": "..." }`.
+
+#### `POST /auth/login` — Obtain a JWT token
+
+Uses `application/x-www-form-urlencoded` (OAuth2 standard form):
+
+```
+username=patient@example.com&password=mysecurepassword
+```
+
+Returns:
+
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer"
+}
+```
+
+#### `POST /auth/change-password` — Change password
+
+Requires a valid Bearer token.
+
+```json
+{
+  "old_password": "mysecurepassword",
+  "new_password": "mynewpassword"
+}
+```
+
+Returns `{ "message": "Password updated successfully" }`.
+
+---
+
+### Chat (protected — JWT required)
+
 All consultation interactions go through a **session-based multi-turn API**. Each session is identified by a `session_id` UUID returned on the first request and is held in memory for 30 minutes of inactivity.
 
-### `POST /chat`
+#### `POST /chat`
 
 Unified endpoint for all interaction types, distinguished by the `type` field.
 
-#### `type: "initial"` — Start a new consultation
+##### `type: "initial"` — Start a new consultation
 
 **Request body**
 
@@ -224,7 +320,7 @@ Unified endpoint for all interaction types, distinguished by the `type` field.
 | `existing_conditions` | string[] | No | Pre-existing conditions |
 | `language` | string (ISO 639-1) | No | Patient language; auto-detected if omitted |
 
-#### `type: "answer"` — Reply to a clarifying question
+##### `type: "answer"` — Reply to a clarifying question
 
 ```json
 {
@@ -234,7 +330,7 @@ Unified endpoint for all interaction types, distinguished by the `type` field.
 }
 ```
 
-#### `type: "followup"` — Ask a follow-up question after a result
+##### `type: "followup"` — Ask a follow-up question after a result
 
 ```json
 {
@@ -281,9 +377,9 @@ The `type` field in the response indicates which fields are populated:
 | `medium` | Consult a clinician within 24 hours |
 | `high` | Seek emergency medical care immediately |
 
-### `DELETE /session/{session_id}`
+#### `DELETE /session/{session_id}`
 
-Explicitly end a session and clear its Mem0 memory. Called automatically by the frontend when starting a new consultation.
+Explicitly end a consultation session and clear its in-memory state. Mem0 memories are **not** deleted on session teardown — they are preserved permanently for the user to benefit future consultations.
 
 Returns `{"ok": true}`.
 
@@ -295,10 +391,13 @@ Health check. Returns `{"ok": true, "service": "MediGuideAI"}`.
 
 ## Agent Pipeline
 
-Each `POST /chat` request passes through a sequential agent pipeline. The triage agent may ask up to 3 clarifying questions before producing a result, maintaining full conversation history across turns within the session.
+Each `POST /chat` request first verifies the JWT token, then passes through a sequential agent pipeline. Before triage begins, the system retrieves relevant memories from the user's previous consultations stored in Mem0. The triage agent may ask up to 3 clarifying questions before producing a result, maintaining full conversation history across turns within the session.
 
 ```
-PatientInput
+JWT Verification (401 if invalid)
+    │
+    ▼
+Mem0 History Retrieval (search past consultations for this user)
     │
     ▼
 ┌─────────────────┐   Detects and translates non-English symptoms to English
@@ -311,27 +410,65 @@ PatientInput
 └────────┬────────┘
          │
          ▼
-┌─────────────────┐   Produces TriageOutput: severity, possible_conditions,
-│   Triage Agent  │   recommended_action, urgency.
-└────────┬────────┘
+┌──────────────────────────────────────────────────────┐
+│   Triage Agent                                       │
+│                                                      │
+│   Receives: demographics + symptoms + RAG contexts   │
+│           + conversation history                     │
+│           + Patient Memory (from Mem0)               │
+│                                                      │
+│   Uses patient memory for:                          │
+│   • Smart Follow-ups — recognises recurring or       │
+│     worsening symptoms from past consultations       │
+│   • Chronic Conditions — accounts for stored         │
+│     conditions (e.g. asthma, diabetes) in severity  │
+│   • Allergy Safety — calls out known allergies in    │
+│     notes and avoids suggesting that substance       │
+└────────┬─────────────────────────────────────────────┘
          │
-    ┌────┴─────────────────────────────────────┐
-    ▼                                          ▼
-┌──────────────────┐               ┌───────────────────┐
-│ Escalation Agent │               │   Safety Agent    │
-│                  │               │                   │
-│ Detects red-flag │               │ Audits triage for │
-│ emergency signs. │               │ unsafe advice;    │
-│ Forces severity  │               │ applies override  │
-│ = "high" when    │               │ if needed.        │
-│ triggered.       │               └───────────────────┘
-└──────────────────┘
+         ▼
+┌───────────────────┐
+│   Safety Agent    │
+│                   │
+│ Audits triage for │
+│ unsafe advice;    │
+│ applies override  │
+│ if needed.        │
+└────────┬──────────┘
+         │
+         ▼
+Language Agent translates response back to patient's language
+         │
+         ▼
+Mem0 Write (stores this turn permanently under the user's ID)
          │
          ▼
   Final JSON response
 ```
 
 All agents are built with **Pydantic-AI** and share the model configured via `MODEL_NAME`. The agents are provider-agnostic; switching models requires only an environment variable change.
+
+---
+
+## Known Issues
+
+- **No token revocation**: JWT tokens are valid until expiry (7 days). There is no server-side logout or blacklist.
+- **In-memory sessions**: Active consultation sessions are held in RAM. All sessions are lost on server restart; users must start a new consultation after a restart.
+- **Chroma dependency at startup**: If Chroma is not reachable when the backend starts, the RAG service will fail. Restart the backend after Chroma is healthy.
+- **Static guideline corpus**: The clinical guideline data (`clinical_guideline.json`) must be manually updated to reflect new clinical evidence.
+- **Frontend sends plain-text passwords**: The frontend prototype does not enforce HTTPS. Deploy behind TLS in any real environment.
+
+---
+
+## Roadmap
+
+- HTTPS termination in the Docker Compose stack (e.g., Caddy reverse proxy)
+- Durable session store (Redis or database-backed) to survive server restarts
+- Password reset via email
+- Full multilingual intake form (structured fields in patient's language)
+- Dynamic guideline corpus updates
+- Prospective clinical validation study with community health workers
+- On-device inference support for low-connectivity environments (smaller open-weight models)
 
 ---
 

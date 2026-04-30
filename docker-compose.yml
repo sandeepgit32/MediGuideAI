@@ -22,8 +22,35 @@ services:
       - MEM0_EMBED_MODEL=${MEM0_EMBED_MODEL:-text-embedding-3-small}
       - CHROMA_SERVER_HOST=chroma
       - CHROMA_SERVER_HTTP_PORT=8000
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=mediguide
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=mediguideai
     depends_on:
-      - chroma
+      chroma:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
+      - MYSQL_DATABASE=mediguideai
+      - MYSQL_USER=mediguide
+      - MYSQL_PASSWORD=password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-umediguide", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:
@@ -48,4 +75,6 @@ services:
 
 volumes:
   chroma_data:
+    driver: local
+  mysql_data:
     driver: local

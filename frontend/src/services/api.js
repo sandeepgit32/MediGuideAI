@@ -2,6 +2,60 @@ import axios from 'axios'
 
 const client = axios.create({ baseURL: '/', timeout: 60000 })
 
+// Attach the JWT token to every request when one is stored
+client.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers['Authorization'] = `Bearer ${token}`
+  return config
+})
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Register a new account.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{id: string, email: string}>}
+ */
+export async function register(email, password) {
+  const res = await client.post('/auth/register', { email, password })
+  return res.data
+}
+
+/**
+ * Log in and persist the JWT token to localStorage.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{access_token: string, token_type: string}>}
+ */
+export async function login(email, password) {
+  const form = new URLSearchParams()
+  form.append('username', email)
+  form.append('password', password)
+  const res = await client.post('/auth/login', form, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  })
+  localStorage.setItem('token', res.data.access_token)
+  return res.data
+}
+
+/**
+ * Remove the JWT token from localStorage (client-side logout).
+ */
+export function logout() {
+  localStorage.removeItem('token')
+}
+
+/**
+ * Return the stored token, or null if not logged in.
+ * @returns {string|null}
+ */
+export function getToken() {
+  return localStorage.getItem('token')
+}
+
+// ── Consultation ──────────────────────────────────────────────────────────────
+
 /**
  * Start a new consultation session (initial message).
  * @param {object} payload - { age, symptoms, duration, language?, gender?, existing_conditions? }
@@ -35,7 +89,7 @@ export async function followupChat(sessionId, message) {
 }
 
 /**
- * Explicitly clear a session and its mem0 memory.
+ * Explicitly clear a session.
  * Called when starting a new consultation.
  * @param {string} sessionId
  * @returns {Promise<{ok: boolean}>}
