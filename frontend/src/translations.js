@@ -1,6 +1,13 @@
 export const TRANSLATIONS = {
   en: {
     footer: 'For guidance only · Not a replacement for a doctor · In an emergency call your local emergency number immediately.',
+    signOut: 'Sign Out',
+    account: 'Account',
+    historyBtn: 'History',
+    historyTitle: 'Consultation History',
+    historyEmpty: 'No history.',
+    historyLoading: 'Loading history…',
+    historyError: 'Could not load history.',
     chooseLanguage: 'Choose your language',
     selectLanguage: 'Select the language you understand best',
     continueBtn: 'Continue →',
@@ -83,6 +90,13 @@ export const TRANSLATIONS = {
 
   hi: {
     footer: 'केवल मार्गदर्शन के लिए · डॉक्टर का विकल्प नहीं · आपातकाल में तुरंत अपना स्थानीय आपातकालीन नंबर डायल करें।',
+    signOut: 'साइन आउट',
+    account: 'खाता',
+    historyBtn: 'इतिहास',
+    historyTitle: 'परामर्श इतिहास',
+    historyEmpty: 'अभी तक कोई परामर्श नहीं।',
+    historyLoading: 'इतिहास लोड हो रहा है…',
+    historyError: 'इतिहास लोड नहीं हो सका।',
     chooseLanguage: 'अपनी भाषा चुनें',
     selectLanguage: 'वह भाषा चुनें जो आप सबसे अच्छी तरह समझते हैं',
     continueBtn: 'जारी रखें →',
@@ -163,6 +177,13 @@ export const TRANSLATIONS = {
 
   bn: {
     footer: 'শুধুমাত্র নির্দেশনার জন্য · ডাক্তারের বিকল্প নয় · জরুরি অবস্থায় এখনই আপনার স্থানীয় জরুরি নম্বরে কল করুন।',
+    signOut: 'সাইন আউট',
+    account: 'অ্যাকাউন্ট',
+    historyBtn: 'ইতিহাস',
+    historyTitle: 'পরামর্শ ইতিহাস',
+    historyEmpty: 'এখনও কোনো পরামর্শ নেই।',
+    historyLoading: 'ইতিহাস লোড হচ্ছে…',
+    historyError: 'ইতিহাস লোড করা যায়নি।',
     chooseLanguage: 'আপনার ভাষা বেছে নিন',
     selectLanguage: 'যে ভাষাটি আপনি সবচেয়ে ভালো বোঝেন সেটি বেছে নিন',
     continueBtn: 'চালিয়ে যান →',
@@ -243,6 +264,13 @@ export const TRANSLATIONS = {
 
   es: {
     footer: 'Solo orientación · No reemplaza a un médico · En caso de emergencia llame a su número de emergencias local de inmediato.',
+    signOut: 'Cerrar sesión',
+    account: 'Cuenta',
+    historyBtn: 'Historial',
+    historyTitle: 'Historial de consultas',
+    historyEmpty: 'Aún no hay consultas.',
+    historyLoading: 'Cargando historial…',
+    historyError: 'No se pudo cargar el historial.',
     chooseLanguage: 'Elige tu idioma',
     selectLanguage: 'Selecciona el idioma que mejor entiendes',
     continueBtn: 'Continuar →',
@@ -323,6 +351,13 @@ export const TRANSLATIONS = {
 
   fr: {
     footer: "Pour orientation uniquement · Ne remplace pas un médecin · En cas d'urgence, appelez immédiatement votre numéro d'urgence local.",
+    signOut: 'Se déconnecter',
+    account: 'Compte',
+    historyBtn: 'Historique',
+    historyTitle: 'Historique des consultations',
+    historyEmpty: 'Aucune consultation pour le moment.',
+    historyLoading: 'Chargement de l\'historique…',
+    historyError: 'Impossible de charger l\'historique.',
     chooseLanguage: 'Choisissez votre langue',
     selectLanguage: 'Sélectionnez la langue que vous comprenez le mieux',
     continueBtn: 'Continuer →',

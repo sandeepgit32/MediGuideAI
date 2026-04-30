@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const client = axios.create({ baseURL: '/', timeout: 60000 })
+const client = axios.create({ baseURL: '/', timeout: 300000 })
 
 // Attach the JWT token to every request when one is stored
 client.interceptors.request.use(config => {
@@ -36,6 +36,7 @@ export async function login(email, password) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
   localStorage.setItem('token', res.data.access_token)
+  localStorage.setItem('user_email', email)
   return res.data
 }
 
@@ -44,6 +45,15 @@ export async function login(email, password) {
  */
 export function logout() {
   localStorage.removeItem('token')
+  localStorage.removeItem('user_email')
+}
+
+/**
+ * Return the stored user email, or empty string if not available.
+ * @returns {string}
+ */
+export function getEmail() {
+  return localStorage.getItem('user_email') || ''
 }
 
 /**
@@ -97,5 +107,14 @@ export async function followupChat(sessionId, message) {
 export async function clearSession(sessionId) {
   if (!sessionId) return { ok: true }
   const res = await client.delete(`/session/${sessionId}`)
+  return res.data
+}
+
+/**
+ * Fetch all consultation history memories for the current user.
+ * @returns {Promise<{memories: Array<{memory: string, created_at: string}>}>}
+ */
+export async function getHistory() {
+  const res = await client.get('/auth/history')
   return res.data
 }

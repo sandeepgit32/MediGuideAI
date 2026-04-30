@@ -13,6 +13,8 @@ variables, so any OpenAI-compatible provider (Groq, OpenAI, Ollama, …) can be 
 
 import asyncio
 import logging
+
+# import os
 from typing import Dict, List
 
 from ..config import settings
@@ -26,8 +28,8 @@ class AgentMemoryService:
 
     Wraps the Mem0 OSS ``Memory`` class (``mem0ai`` package) configured with:
       - An OpenAI-compatible LLM for fact extraction (``LLM_API_URL`` / ``LLM_API_KEY``).
-      - An OpenAI-compatible embedder for vectorising memories
-        (``MEM0_EMBED_API_URL`` / ``MEM0_EMBED_API_KEY`` / ``MEM0_EMBED_MODEL``).
+      - A Gemini embedder for vectorising memories
+        (``MEM0_EMBED_API_KEY`` / ``MEM0_EMBED_MODEL``).
       - Chroma as the vector store, connecting to the Docker-hosted Chroma server
         under a dedicated ``mem0_agent_memory`` collection (separate from RAG data).
 
@@ -49,7 +51,7 @@ class AgentMemoryService:
         Constructs a ``Memory.from_config`` with the following components, all
         driven by environment variables via ``settings``:
           - ``llm``     → ``LLM_API_URL`` / ``LLM_API_KEY`` / ``MEM0_LLM_MODEL``
-          - ``embedder`` → ``MEM0_EMBED_API_URL`` / ``MEM0_EMBED_API_KEY`` / ``MEM0_EMBED_MODEL``
+          - ``embedder`` → ``MEM0_EMBED_API_KEY`` / ``MEM0_EMBED_MODEL``
           - ``vector_store`` → Chroma at ``CHROMA_SERVER_HOST``:``CHROMA_SERVER_HTTP_PORT``
 
         The initialisation is run in a thread-pool executor to avoid blocking
@@ -71,14 +73,7 @@ class AgentMemoryService:
         """
         from mem0 import Memory
 
-        if settings.MEM0_EMBED_API_URL == settings.LLM_API_URL:
-            logger.warning(
-                "MEM0_EMBED_API_URL (%s) is the same as LLM_API_URL. "
-                "Many providers (e.g. Groq) do not expose a /v1/embeddings endpoint. "
-                "Set MEM0_EMBED_API_URL and MEM0_EMBED_API_KEY to a provider that "
-                "supports embeddings (e.g. OpenAI, a local Ollama instance).",
-                settings.MEM0_EMBED_API_URL,
-            )
+        # os.environ["GOOGLE_API_KEY"] = settings.MEM0_EMBED_API_KEY
 
         config = {
             "llm": {
@@ -92,11 +87,9 @@ class AgentMemoryService:
                 },
             },
             "embedder": {
-                "provider": "openai",
+                "provider": "gemini",
                 "config": {
                     "model": settings.MEM0_EMBED_MODEL,
-                    "openai_base_url": settings.MEM0_EMBED_API_URL,
-                    "api_key": settings.MEM0_EMBED_API_KEY or "not-set",
                 },
             },
             "vector_store": {
@@ -133,10 +126,18 @@ class AgentMemoryService:
             "Storing memory for user_id=%r (%d message(s))", user_id, len(messages)
         )
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None, lambda: self._memory.add(messages, user_id=user_id)
-        )
-        logger.info("Memory stored for user_id=%r", user_id)
+        try:
+            await loop.run_in_executor(
+                None, lambda: self._memory.add(messages, user_id=user_id)
+            )
+            logger.info("Memory stored successfully for user_id=%r", user_id)
+        except Exception:
+            logger.exception(
+                "Failed to store memory for user_id=%r — "
+                "check MEM0_EMBED_API_KEY / MEM0_EMBED_MODEL are correct and "
+                "the Gemini embedding API is reachable (non-blocking)",
+                user_id,
+            )
 
     async def search_memory(self, user_id: str, query: str) -> List[str]:
         """
@@ -174,6 +175,66 @@ class AgentMemoryService:
             "Memory search returned %d result(s) for user_id=%r", len(memories), user_id
         )
         return memories
+
+    async def get_all_memories(self, user_id: str) -> List[Dict]:
+        """Retrieve all stored memories for a user, ordered by creation date (newest first).
+
+        Args:
+            user_id (str): Stable identifier for the patient.
+
+        Returns:
+            list[dict]: List of memory entries, each containing at minimum a ``memory``
+                        string and a ``created_at`` ISO timestamp string.  Returns an
+                        empty list if no memories exist or the service is uninitialised.
+        """
+        if not self._memory:
+            logger.warning(
+                "get_all_memories called but service not initialized; returning []"
+            )
+            return []
+        logger.info("Fetching all memories for user_id=%r", user_id)
+        loop = asyncio.get_running_loop()
+        try:
+            results = await loop.run_in_executor(
+                None,
+                lambda: self._memory.get_all(filters={"user_id": user_id}),
+            )
+        except Exception:
+            logger.exception(
+                "get_all() failed for user_id=%r — returning empty list (non-blocking)",
+                user_id,
+            )
+            return []
+        logger.info(
+            "get_all() raw result for user_id=%r: type=%s value=%r",
+            user_id,
+            type(results).__name__,
+            results,
+        )
+        entries: List[Dict] = []
+        if isinstance(results, dict):
+            raw = results.get("results", [])
+        elif isinstance(results, list):
+            raw = results
+        else:
+            logger.warning(
+                "get_all() returned unexpected type %s for user_id=%r; returning empty list",
+                type(results).__name__,
+                user_id,
+            )
+            raw = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                entries.append(
+                    {
+                        "memory": entry.get("memory", ""),
+                        "created_at": entry.get("created_at")
+                        or entry.get("updated_at")
+                        or "",
+                    }
+                )
+        logger.info("Fetched %d memory entries for user_id=%r", len(entries), user_id)
+        return entries
 
     async def delete_session_memory(self, user_id: str) -> None:
         """Delete all Mem0 memories associated with *user_id* (session_id).

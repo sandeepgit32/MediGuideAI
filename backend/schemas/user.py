@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 
@@ -25,3 +27,12 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     id: str
+
+
+class HistoryEntry(BaseModel):
+    memory: str
+    created_at: str
+
+
+class HistoryResponse(BaseModel):
+    memories: List[HistoryEntry]

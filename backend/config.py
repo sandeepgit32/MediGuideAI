@@ -29,12 +29,7 @@ class Settings:
         self.MEM0_LLM_MODEL: str = os.environ.get("MEM0_LLM_MODEL") or self.MODEL_NAME
 
         # Embedder used by Mem0 to vectorise memories.
-        # Groq does not expose an embeddings endpoint, so configure a separate
-        # provider via MEM0_EMBED_API_URL / MEM0_EMBED_API_KEY / MEM0_EMBED_MODEL.
-        # Defaults to OpenAI text-embedding-3-small.
-        self.MEM0_EMBED_API_URL: str = (
-            os.environ.get("MEM0_EMBED_API_URL") or "https://api.openai.com/v1"
-        )
+        # Configure MEM0_EMBED_API_KEY and MEM0_EMBED_MODEL for the provider.
         self.MEM0_EMBED_API_KEY: Optional[str] = (
             os.environ.get("MEM0_EMBED_API_KEY") or self.LLM_API_KEY
         )

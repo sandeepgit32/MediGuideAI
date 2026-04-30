@@ -5,7 +5,15 @@ from jose import JWTError, jwt
 
 from ..database.database import get_db
 from ..database.models import User
-from ..schemas.user import UserCreate, UserResponse, Token, TokenData, PasswordChange
+from ..schemas.user import (
+    UserCreate,
+    UserResponse,
+    Token,
+    TokenData,
+    PasswordChange,
+    HistoryResponse,
+    HistoryEntry,
+)
 from ..utils.security import (
     get_password_hash,
     verify_password,
@@ -13,6 +21,7 @@ from ..utils.security import (
     SECRET_KEY,
     ALGORITHM,
 )
+from ..services.agent_memory import memory_service
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -87,3 +96,42 @@ def change_password(
     current_user.hashed_password = get_password_hash(passwords.new_password)
     db.commit()
     return {"message": "Password updated successfully"}
+
+
+@auth_router.get("/history", response_model=HistoryResponse)
+async def get_history(current_user: User = Depends(get_current_user)):
+    """Return all Mem0 consultation memories for the authenticated user, newest first.
+
+    Always returns 200.  If the memory service is unavailable or returns no data
+    the response will contain an empty ``memories`` list and the frontend will
+    show the "No history" state.
+    """
+    import logging
+
+    _log = logging.getLogger(__name__)
+    user_id = str(current_user.id)
+    _log.info(
+        "GET /auth/history — fetching memories for user_id=%r (email=%r)",
+        user_id,
+        current_user.email,
+    )
+    try:
+        entries = await memory_service.get_all_memories(user_id)
+    except Exception:
+        _log.exception(
+            "Unexpected error fetching memories for user_id=%r; returning empty list",
+            user_id,
+        )
+        entries = []
+    entries.sort(key=lambda e: e.get("created_at") or "", reverse=True)
+    _log.info(
+        "GET /auth/history — returning %d memories for user_id=%r",
+        len(entries),
+        user_id,
+    )
+    return HistoryResponse(
+        memories=[
+            HistoryEntry(memory=e["memory"], created_at=e["created_at"])
+            for e in entries
+        ]
+    )
