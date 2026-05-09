@@ -1,6 +1,7 @@
 import os
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Load database configuration from environment variables
 MYSQL_USER = os.getenv("MYSQL_USER")
@@ -32,4 +33,3 @@ def get_db():
         yield db
     finally:
         db.close()
-

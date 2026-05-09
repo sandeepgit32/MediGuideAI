@@ -62,30 +62,41 @@ async def lifespan(app: FastAPI):
         None
     """
     logger.info("MediGuideAI starting up — initializing services")
+
+    # Initialize the Retrieval-Augmented Generation (RAG) service
     try:
         await rag_service.initialize()
         logger.info("RAG service initialized")
     except Exception:
         logger.exception("RAG service initialization failed")
 
+    # Initialize the relational database (e.g., create tables if they don't exist)
     try:
         init_db()
         logger.info("Database initialized")
     except Exception:
         logger.exception("Database initialization failed")
 
+    # Initialize the memory service to maintain multi-turn conversational context
     try:
         await memory_service.initialize()
         logger.info("Agent memory service initialized")
     except Exception:
         logger.exception("Agent memory service initialization failed")
+
+    # Start the background task to periodically remove expired chat sessions
     start_eviction_task()
+
     logger.info(
         "MediGuideAI startup complete (model=%s, allowed_origins=%s)",
         settings.MODEL_NAME,
         settings.ALLOWED_ORIGINS,
     )
+
+    # Yield control back to FastAPI; the application runs during this yield
     yield
+
+    # Cleanup: Stop the session eviction background task upon shutdown
     stop_eviction_task()
     logger.info("MediGuideAI shutting down")
 
@@ -125,8 +136,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the routes
+# Include application routers
+# Auth router handles login, registration, and token generation
 app.include_router(auth_router)
+# Chat router handles all symptom triage and agent interactions
 app.include_router(chat_router)
 
 

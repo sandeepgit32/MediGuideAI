@@ -96,7 +96,7 @@ class AgentMemoryService:
                 "provider": "chroma",
                 "config": {
                     "collection_name": "mem0_agent_memory",
-                    "host": settings.CHROMA_SERVER_HOST or "localhost",
+                    "host": settings.CHROMA_SERVER_HOST,
                     "port": settings.CHROMA_SERVER_HTTP_PORT,
                 },
             },
