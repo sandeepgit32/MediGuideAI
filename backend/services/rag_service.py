@@ -60,10 +60,6 @@ class RAGService:
         self.collection = None
         self.docs: List[str] = []
         self._initialized = False
-        # default data path
-        self.data_path = os.path.join(
-            os.path.dirname(__file__), "..", "data", "clinical_guideline.json"
-        )
 
     async def initialize(self):
         """Initialize the Chroma collection asynchronously.
@@ -150,7 +146,8 @@ class RAGService:
             logger.info("Collection is empty; indexing %d document(s)", len(self.docs))
             ids = [f"doc-{i}" for i in range(len(self.docs))]
             metadatas = [
-                {"source": "clinical_guidelines", "idx": i} for i in range(len(self.docs))
+                {"source": "clinical_guidelines", "idx": i}
+                for i in range(len(self.docs))
             ]
             collection.add(ids=ids, documents=self.docs, metadatas=metadatas)
             logger.info("Indexed %d document(s) into Chroma", len(self.docs))

@@ -13,7 +13,6 @@ The application is provider-agnostic and configurable via environment variables
 the settings module.
 """
 
-import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -23,12 +22,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
+from .database import init_db
 from .routes.auth import auth_router
 from .routes.chat import router as chat_router
 from .services.agent_memory import memory_service
 from .services.rag_service import rag_service
 from .services.session_store import start_eviction_task, stop_eviction_task
-from .database import init_db
 
 # ---------------------------------------------------------------------------
 # Logging configuration
