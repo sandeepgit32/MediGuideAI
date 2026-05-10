@@ -121,7 +121,12 @@ def delete_session(session_id: str) -> bool:
 
 
 async def _eviction_loop() -> None:
-    """Background coroutine that removes expired sessions every EVICTION_INTERVAL_SECONDS."""
+    """Background coroutine that removes expired sessions every EVICTION_INTERVAL_SECONDS.
+
+    Only in-memory session state is removed here. Cross-session patient data
+    (consultation history, patient profile) lives in MySQL and is intentionally
+    preserved beyond session lifetime.
+    """
     while True:
         await asyncio.sleep(EVICTION_INTERVAL_SECONDS)
         expired = [sid for sid, s in list(_sessions.items()) if s.is_expired()]
@@ -129,15 +134,6 @@ async def _eviction_loop() -> None:
             logger.info("TTL eviction: removing %d expired session(s)", len(expired))
             for sid in expired:
                 _sessions.pop(sid, None)
-                # Best-effort: notify memory service to clean up mem0 vectors
-                try:
-                    from .agent_memory import memory_service
-
-                    await memory_service.delete_session_memory(sid)
-                except Exception:
-                    logger.debug(
-                        "Could not delete mem0 memories for evicted session %s", sid
-                    )
 
 
 def start_eviction_task() -> asyncio.Task:

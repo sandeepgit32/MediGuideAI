@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 
 from ..database.database import get_db
-from ..database.models import User
+from ..database.models import ConsultationHistory, User
 from ..schemas.user import (
     UserCreate,
     UserResponse,
@@ -21,7 +21,6 @@ from ..utils.security import (
     SECRET_KEY,
     ALGORITHM,
 )
-from ..services.agent_memory import memory_service
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -99,39 +98,37 @@ def change_password(
 
 
 @auth_router.get("/history", response_model=HistoryResponse)
-async def get_history(current_user: User = Depends(get_current_user)):
-    """Return all Mem0 consultation memories for the authenticated user, newest first.
+def get_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all consultation history for the authenticated user, newest first.
 
-    Always returns 200.  If the memory service is unavailable or returns no data
-    the response will contain an empty ``memories`` list and the frontend will
-    show the "No history" state.
+    Queries the ``consultation_history`` MySQL table. The ``memory`` field
+    combines severity and recommended action so the frontend card displays a
+    meaningful one-line summary. ``created_at`` is an ISO 8601 string so the
+    frontend ``groupByDate()`` helper can parse it reliably.
     """
     import logging
 
     _log = logging.getLogger(__name__)
     user_id = str(current_user.id)
-    _log.info(
-        "GET /auth/history — fetching memories for user_id=%r (email=%r)",
-        user_id,
-        current_user.email,
+    _log.info("GET /auth/history for user_id=%r", user_id)
+
+    rows = (
+        db.query(ConsultationHistory)
+        .filter(ConsultationHistory.user_id == user_id)
+        .order_by(ConsultationHistory.created_at.desc())
+        .all()
     )
-    try:
-        entries = await memory_service.get_all_memories(user_id)
-    except Exception:
-        _log.exception(
-            "Unexpected error fetching memories for user_id=%r; returning empty list",
-            user_id,
-        )
-        entries = []
-    entries.sort(key=lambda e: e.get("created_at") or "", reverse=True)
-    _log.info(
-        "GET /auth/history — returning %d memories for user_id=%r",
-        len(entries),
-        user_id,
-    )
+    _log.info("Returning %d history entries for user_id=%r", len(rows), user_id)
     return HistoryResponse(
         memories=[
-            HistoryEntry(memory=e["memory"], created_at=e["created_at"])
-            for e in entries
+            HistoryEntry(
+                memory=f"{row.severity.upper()} — {row.recommended_action} (symptoms: {row.symptoms})",
+                created_at=row.created_at.isoformat(),
+                summary=row.summary,
+            )
+            for row in rows
         ]
     )

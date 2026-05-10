@@ -23,20 +23,6 @@ class Settings:
         except ValueError:
             self.RAG_TOP_K = 3
 
-        # Mem0 (memory layer) configuration — local OSS, backed by Chroma
-        # LLM used by Mem0 internally for fact extraction.
-        # Defaults to the same model as the application LLM.
-        self.MEM0_LLM_MODEL: str = os.environ.get("MEM0_LLM_MODEL") or self.MODEL_NAME
-
-        # Embedder used by Mem0 to vectorise memories.
-        # Configure MEM0_EMBED_API_KEY and MEM0_EMBED_MODEL for the provider.
-        self.MEM0_EMBED_API_KEY: Optional[str] = (
-            os.environ.get("MEM0_EMBED_API_KEY") or self.LLM_API_KEY
-        )
-        self.MEM0_EMBED_MODEL: str = os.environ.get(
-            "MEM0_EMBED_MODEL", "text-embedding-3-small"
-        )
-
         # Chroma (vector DB) configuration
         self.CHROMA_COLLECTION_NAME: str = os.environ.get(
             "CHROMA_COLLECTION_NAME", "clinical_guidelines"

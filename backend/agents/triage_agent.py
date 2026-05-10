@@ -86,16 +86,6 @@ _TRIAGE_AGENT = Agent(
     instructions=(
         "You are a conservative clinical triage assistant for low-resource rural health settings.\n\n"
         "You will receive patient demographics, symptoms, and the conversation so far.\n\n"
-        "PATIENT MEMORY — If a '# Patient Memory (from previous consultations)' section is present "
-        "in the prompt, you MUST actively use it to:\n"
-        "  a) Smart Follow-up: If the patient had a similar complaint recently, note whether symptoms "
-        "are persisting, worsening, or recurring, and factor this into severity assessment.\n"
-        "  b) Chronic Conditions: If the patient has a recorded chronic condition (e.g. asthma, "
-        "diabetes, hypertension), take it into account when assessing current symptoms and urgency. "
-        "Escalate severity if the current complaint could be a complication of that condition.\n"
-        "  c) Allergy Safety: If the patient has any recorded allergies (e.g. penicillin, NSAIDs), "
-        "explicitly call them out in 'notes' and ensure your recommended_action does NOT suggest "
-        "any medication they are allergic to.\n\n"
         "DECISION:\n"
         "  A) If a single targeted clarifying question would materially change the severity "
         "assessment AND the clarification budget is not exhausted, set response_type='question' "
@@ -120,16 +110,14 @@ _TRIAGE_AGENT = Agent(
         "prescription-only medication.\n"
         "3. recommended_action must be one to three concise, actionable sentences.\n"
         "4. possible_conditions must list >= 1 entry (when response_type='result').\n"
-        "5. notes must include a one-sentence disclaimer that this is not a medical diagnosis. "
-        "If the patient has any known allergies retrieved from memory, also mention them in notes.\n"
+        "5. notes must include a one-sentence disclaimer that this is not a medical diagnosis.\n"
         "6. When uncertain between two severity levels, choose the higher one.\n"
         "7. Call get_severity_guide() when unsure which severity level applies."
     ),
     system_prompt=(
         "Patient safety is your primary constraint. Never provide a diagnosis or recommend any "
         "prescription-only medication. Always recommend clinical review when uncertain. Every result "
-        "response must include a note that it is not a substitute for professional medical advice. "
-        "Always check patient memory for known allergies and chronic conditions before making recommendations."
+        "response must include a note that it is not a substitute for professional medical advice."
     ),
     name="triage_agent",
 )
@@ -178,7 +166,6 @@ async def triage_with_history(
     conversation: List[Dict],
     clarification_count: int,
     language: str = "en",
-    mem0_history: Optional[List[str]] = None,
 ) -> TriageConsultResponse:
     """Run the multi-turn triage agent given the full conversation history."""
     from ..services.session_store import MAX_CLARIFICATIONS
@@ -194,7 +181,6 @@ async def triage_with_history(
         clarification_count=clarification_count,
         max_clarifications=MAX_CLARIFICATIONS,
         language=language,
-        mem0_history=mem0_history,
     )
     logger.info(
         "Triage agent (multi-turn): age=%s symptoms=%s clarification_count=%d/%d lang=%r",

@@ -26,7 +26,6 @@ def build_triage_history_prompt(
     clarification_count: int,
     max_clarifications: int,
     language: str = "en",
-    mem0_history: Optional[List[str]] = None,
 ) -> str:
     """Construct the prompt for the multi-turn triage agent.
 
@@ -67,14 +66,6 @@ def build_triage_history_prompt(
         "\n".join(history_lines) if history_lines else "(no prior conversation)"
     )
 
-    # Build mem0 history block if available
-    mem0_block = (
-        f"\n\n# Patient Memory (from previous consultations)\n"
-        + "\n".join([f"- {m}" for m in mem0_history])
-        if mem0_history
-        else ""
-    )
-
     budget_remaining = max_clarifications - clarification_count
     if budget_remaining <= 0:
         clarification_instruction = (
@@ -91,7 +82,7 @@ def build_triage_history_prompt(
     prompt = f"""You are a medical triage assistant for low-resource settings. This is not a medical diagnosis.
 
 # Clinical Context (clinical Guidelines)
-{context_block}{mem0_block}
+{context_block}
 
 # Patient Information
 - Age: {age}
@@ -113,7 +104,6 @@ Return a TriageConsultResponse JSON object:
 - If producing a triage result:
   {{"response_type": "result", "question": null, "severity": "<low|medium|high>", "possible_conditions": ["..."], "recommended_action": "<1-3 sentences>", "urgency": "<timeframe>", "notes": "<disclaimer>"}}
 
-{"If Patient Memory is present above: (a) mention whether the current complaint represents a new, recurring, or worsening issue; (b) if any chronic condition is recorded, account for it in severity; (c) if any allergy is recorded, call it out in the notes field and do NOT suggest that substance." if mem0_history else ""}
 Use cautious, non-diagnostic language. Keep answers simple and suitable for translation.
 Do not prescribe medications. Return valid JSON only.
 """
@@ -121,6 +111,84 @@ Do not prescribe medications. Return valid JSON only.
         prompt += f"\nWhen response_type='question', write the question in language: {language}."
 
     return prompt
+
+
+def build_summary_prompt(
+    symptoms_en: List[str],
+    duration: str,
+    existing_conditions: List[str],
+    conversation: List[Dict],
+    gender: Optional[str] = None,
+) -> str:
+    """Construct a prompt to generate a one-paragraph consultation summary.
+
+    Extracts clarification Q&A pairs from the conversation (skipping the
+    opening patient-info message) and asks the LLM to produce a concise
+    English summary of the reported symptoms and the Q&A exchange.
+
+    Args:
+        symptoms_en: English-translated symptom strings.
+        duration: Duration string (e.g. '3 to 7 days').
+        existing_conditions: Pre-existing conditions reported by the patient.
+        conversation: Full ``[{role, content}]`` history in English.  The
+            first user message is the auto-generated patient-info line;
+            subsequent assistant messages are clarification questions and the
+            following user messages are patient answers.
+        gender: Patient gender string ('male', 'female', or other/None).
+            Used to select the correct pronoun (he/she/they).
+
+    Returns:
+        Prompt string ready to pass to the summary agent.
+    """
+    # Choose pronoun based on gender
+    if gender == "male":
+        pronoun_instruction = "Refer to the patient as 'he/him'."
+    elif gender == "female":
+        pronoun_instruction = "Refer to the patient as 'she/her'."
+    else:
+        pronoun_instruction = "Refer to the patient as 'they/them'."
+
+    symptoms_str = ", ".join(symptoms_en) if symptoms_en else "not specified"
+    conditions_str = (
+        ", ".join(existing_conditions) if existing_conditions else "none reported"
+    )
+
+    # Extract Q&A pairs: assistant messages that are clarification questions
+    # paired with the immediately following user reply.
+    qa_lines: List[str] = []
+    i = 1  # skip index 0 (patient-info seed message)
+    while i < len(conversation):
+        msg = conversation[i]
+        if msg.get("role") == "assistant":
+            question = msg.get("content", "").strip()
+            # Skip the triage-log line (starts with "Triage:")
+            if question.startswith("Triage:"):
+                i += 1
+                continue
+            # Look for the patient's answer in the next message
+            if i + 1 < len(conversation) and conversation[i + 1].get("role") == "user":
+                answer = conversation[i + 1].get("content", "").strip()
+                qa_lines.append(f"  Q: {question}\n  A: {answer}")
+                i += 2
+                continue
+        i += 1
+
+    qa_block = (
+        "\n".join(qa_lines) if qa_lines else "(no clarification questions were asked)"
+    )
+
+    return (
+        "Write a single concise paragraph (3-5 sentences) in plain English summarising "
+        "the following medical consultation. Include the reported symptoms, how long they "
+        "have been present, any pre-existing conditions, and what the patient answered to "
+        f"each clarification question. {pronoun_instruction} "
+        "Use simple, factual language — no diagnosis, no advice.\n\n"
+        f"Symptoms: {symptoms_str}\n"
+        f"Duration: {duration}\n"
+        f"Existing conditions: {conditions_str}\n\n"
+        f"Clarification Q&A:\n{qa_block}\n\n"
+        "Return only the paragraph text, with no headings or bullet points."
+    )
 
 
 def build_translation_prompt(text: str, target: str) -> str:

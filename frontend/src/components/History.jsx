@@ -95,7 +95,13 @@ export default function History({ lang }) {
           <p className="history-date-label">{dateLabel}</p>
           {[...entries].reverse().map((entry, idx) => (
             <div key={idx} className="history-card">
-              {entry.memory}
+              <p className="history-card-memory">{entry.memory}</p>
+              {entry.summary && (
+                <div className="history-card-summary">
+                  <p className="history-card-summary-label">{t.consultationSummary}</p>
+                  <p className="history-card-summary-text">{entry.summary}</p>
+                </div>
+              )}
             </div>
           ))}
         </div>

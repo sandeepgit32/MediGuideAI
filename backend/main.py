@@ -25,7 +25,6 @@ from .config import settings
 from .database import init_db
 from .routes.auth import auth_router
 from .routes.chat import router as chat_router
-from .services.agent_memory import memory_service
 from .services.rag_service import rag_service
 from .services.session_store import start_eviction_task, stop_eviction_task
 
@@ -49,7 +48,6 @@ async def lifespan(app: FastAPI):
 
     **Startup (before yield):**
       - Initializes the RAG service with Chroma vector database connection.
-      - Initializes the Mem0 agent memory service backed by Chroma.
       - Starts the background session TTL eviction task.
 
     **Shutdown (after yield):**
@@ -77,14 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Database initialization failed")
 
-    # Initialize the memory service to maintain multi-turn conversational context
-    try:
-        await memory_service.initialize()
-        logger.info("Agent memory service initialized")
-    except Exception:
-        logger.exception("Agent memory service initialization failed")
-
-    # Start the background task to periodically remove expired chat sessions
+    # Start the background session TTL eviction task
     start_eviction_task()
 
     logger.info(
@@ -93,10 +84,10 @@ async def lifespan(app: FastAPI):
         settings.ALLOWED_ORIGINS,
     )
 
-    # Yield control back to FastAPI; the application runs during this yield
+    # Yield control to FastAPI; the application runs during this phase
     yield
 
-    # Cleanup: Stop the session eviction background task upon shutdown
+    # Shutdown: Cancel the session eviction task
     stop_eviction_task()
     logger.info("MediGuideAI shutting down")
 

@@ -14,8 +14,6 @@ services:
       # Also expose as standard OpenAI env vars so the openai package picks them up
       - OPENAI_API_KEY=${LLM_API_KEY}
       - OPENAI_BASE_URL=${LLM_API_URL}
-      # Expose embedding API key for Mem0. 
-      - GOOGLE_API_KEY=${MEM0_EMBED_API_KEY}
     depends_on:
       chroma:
         condition: service_started

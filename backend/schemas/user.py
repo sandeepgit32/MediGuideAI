@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
@@ -32,6 +32,7 @@ class TokenData(BaseModel):
 class HistoryEntry(BaseModel):
     memory: str
     created_at: str
+    summary: Optional[str] = None
 
 
 class HistoryResponse(BaseModel):
