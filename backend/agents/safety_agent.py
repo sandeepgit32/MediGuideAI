@@ -55,11 +55,11 @@ from typing import List
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelHTTPError
 
+from ..config import settings
 from ..schemas.safety import SafetyOutput
 from ..schemas.triage import TriageOutput
-from ..config import settings
-from ..utils.prompts import build_safety_prompt
 from ..utils.llm_fallback import extract_failed_generation_json, run_agent_with_retry
+from ..utils.prompts import build_safety_prompt
 
 _EMERGENCY_OVERRIDE_MESSAGE = (
     "Seek immediate emergency medical care — call emergency services or "
@@ -70,14 +70,100 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Prescription-pattern heuristics used by the check_prescription_patterns tool
+# This would return which categories of "prescription-like" content were detected
+# in a piece of text — e.g., ["dosage_mention", "named_drug"] for the string
+# "take 500mg ibuprofen".
 # ---------------------------------------------------------------------------
+# _PRESCRIPTION_PATTERNS: list[tuple[str, str]] = [
+#     (r"\b\d+\s*mg\b", "dosage_mention"),
+#     (r"\b(take|prescribe|administer|give)\s+\w+", "prescriptive_verb"),
+#     (
+#         r"\b(ibuprofen|paracetamol|acetaminophen|amoxicillin|metformin|aspirin|"
+#         r"penicillin|ciprofloxacin|metronidazole|diazepam|codeine|morphine)\b",
+#         "named_drug",
+#     ),
+# ]
 _PRESCRIPTION_PATTERNS: list[tuple[str, str]] = [
-    (r"\b\d+\s*mg\b", "dosage_mention"),
-    (r"\b(take|prescribe|administer|give)\s+\w+", "prescriptive_verb"),
+    # --- Dosage mentions (expanded units) ---
+    (r"\b\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|units?)\b", "dosage_mention"),
+    (r"\b\d+\s*(mg|mcg|g|ml)\s*/\s*(kg|day|dose|ml)\b", "dosage_per_unit"),
+    # --- Frequency / regimen phrases ---
+    (r"\b(once|twice|three times|four times)\s+(a|per)\s+day\b", "frequency_mention"),
+    (r"\bevery\s+\d+\s+hours\b", "frequency_mention"),
+    (r"\b(bid|tid|qid|qd|prn|qhs|q\d+h)\b", "medical_abbreviation"),
+    # --- Prescriptive verbs (expanded) ---
     (
-        r"\b(ibuprofen|paracetamol|acetaminophen|amoxicillin|metformin|aspirin|"
-        r"penicillin|ciprofloxacin|metronidazole|diazepam|codeine|morphine)\b",
-        "named_drug",
+        r"\b(take|prescribe|administer|give|inject|dose|ingest|swallow)\s+\w+",
+        "prescriptive_verb",
+    ),
+    (
+        r"\b(increase|decrease|adjust|titrate)\s+(the\s+)?dos(e|age)\b",
+        "dosage_adjustment",
+    ),
+    # --- Named drugs: analgesics / NSAIDs ---
+    (
+        r"\b(ibuprofen|paracetamol|acetaminophen|aspirin|naproxen|diclofenac|"
+        r"celecoxib|ketorolac|indomethacin)\b",
+        "named_drug_analgesic",
+    ),
+    # --- Named drugs: antibiotics ---
+    (
+        r"\b(amoxicillin|penicillin|ciprofloxacin|metronidazole|azithromycin|"
+        r"doxycycline|cephalexin|clindamycin|levofloxacin|erythromycin|"
+        r"vancomycin|ampicillin|clarithromycin|trimethoprim|sulfamethoxazole)\b",
+        "named_drug_antibiotic",
+    ),
+    # --- Named drugs: opioids / controlled substances ---
+    (
+        r"\b(codeine|morphine|oxycodone|hydrocodone|fentanyl|tramadol|"
+        r"methadone|buprenorphine|hydromorphone)\b",
+        "named_drug_opioid",
+    ),
+    # --- Named drugs: benzodiazepines / sedatives ---
+    (
+        r"\b(diazepam|lorazepam|alprazolam|clonazepam|midazolam|temazepam|"
+        r"zolpidem|zopiclone)\b",
+        "named_drug_benzo",
+    ),
+    # --- Named drugs: cardiovascular ---
+    (
+        r"\b(metoprolol|atenolol|amlodipine|lisinopril|enalapril|losartan|"
+        r"valsartan|atorvastatin|simvastatin|rosuvastatin|warfarin|"
+        r"clopidogrel|furosemide|hydrochlorothiazide|digoxin)\b",
+        "named_drug_cardiovascular",
+    ),
+    # --- Named drugs: diabetes / endocrine ---
+    (
+        r"\b(metformin|insulin|glipizide|glyburide|sitagliptin|empagliflozin|"
+        r"levothyroxine|prednisone|prednisolone|dexamethasone|hydrocortisone)\b",
+        "named_drug_endocrine",
+    ),
+    # --- Named drugs: psychiatric ---
+    (
+        r"\b(sertraline|fluoxetine|escitalopram|citalopram|paroxetine|"
+        r"venlafaxine|duloxetine|bupropion|mirtazapine|trazodone|"
+        r"quetiapine|risperidone|olanzapine|aripiprazole|haloperidol|"
+        r"lithium|valproate|lamotrigine|gabapentin|pregabalin)\b",
+        "named_drug_psychiatric",
+    ),
+    # --- Named drugs: antihistamines / respiratory ---
+    (
+        r"\b(diphenhydramine|cetirizine|loratadine|fexofenadine|"
+        r"albuterol|salbutamol|budesonide|fluticasone|montelukast|"
+        r"ipratropium|theophylline)\b",
+        "named_drug_respiratory",
+    ),
+    # --- Named drugs: GI ---
+    (
+        r"\b(omeprazole|pantoprazole|esomeprazole|ranitidine|famotidine|"
+        r"metoclopramide|ondansetron|loperamide|lactulose)\b",
+        "named_drug_gi",
+    ),
+    # --- Route/form mentions ---
+    (
+        r"\b(oral|intravenous|iv|intramuscular|im|subcutaneous|sublingual|"
+        r"topical)\s+(dose|administration|injection)\b",
+        "route_mention",
     ),
 ]
 
@@ -85,39 +171,39 @@ _SAFETY_AGENT = Agent(
     settings.get_llm_model(),
     output_type=SafetyOutput,
     instructions=(
-        "You are the clinical safety guardrail for an AI triage system deployed in low-resource settings. "
-        "Evaluate the triage output and the patient's reported symptoms for safety issues.\n\n"
-        "Risk flag vocabulary — use ONLY these exact keys in risk_flags:\n"
-        "  'prescription_mentioned'       — recommendation refers to a specific drug or dosage\n"
-        "  'missing_emergency_escalation' — symptoms indicate an emergency but severity != 'high'\n"
-        "  'underestimated_severity'      — severity is too low for the reported symptoms\n"
-        "  'dangerous_home_care_advice'   — advises home care when professional care is clearly needed\n"
-        "  'contradictory_recommendation' — recommended_action contradicts severity level\n"
-        "  'hallucination_like'           — output contains medically implausible conditions or advice\n"
-        "  'insufficient_urgency'         — urgency field understates the clinical need\n\n"
-        "EMERGENCY RED FLAGS — if ANY of these appear in the symptom list AND severity != 'high', "
-        "you MUST include 'missing_emergency_escalation' in risk_flags:\n"
-        "  chest pain or chest tightness, difficulty breathing or shortness of breath, "
-        "  stroke signs (facial droop / arm weakness / slurred speech / sudden severe headache), "
-        "  loss of consciousness or unresponsiveness, seizure or convulsions, "
-        "  severe or uncontrolled bleeding, anaphylaxis (throat swelling / hives), "
-        "  fever above 38 C in infant under 3 months, suspected poisoning or overdose.\n\n"
-        "Assessment rules:\n"
-        "1. Call check_prescription_patterns with the recommended_action text to detect drug mentions.\n"
-        "2. Check ALL patient symptoms against the emergency red flags list above.\n"
-        "3. Set is_safe=True only when no risk flags apply.\n"
-        "4. Populate risk_flags with every applicable flag key from the vocabulary above.\n"
-        "5. When is_safe=False, override_message must be a single conservative action sentence "
-        "   (e.g. 'Please seek immediate medical care at the nearest health facility.'). "
-        "   For emergency flags use: 'Seek immediate emergency medical care — call emergency services or go to the nearest hospital now.'\n"
-        "6. When is_safe=True, set override_message to null.\n"
-        "7. For ambiguous cases prefer is_safe=False — patient safety outweighs false positives."
+        """You are the clinical safety guardrail for an AI triage system deployed in low-resource settings. 
+        Evaluate the triage output and the patient's reported symptoms for safety issues.\n\n
+        Risk flag vocabulary — use ONLY these exact keys in risk_flags:\n
+          'prescription_mentioned'       — recommendation refers to a specific drug or dosage\n
+          'missing_emergency_escalation' — symptoms indicate an emergency but severity != 'high'\n
+          'underestimated_severity'      — severity is too low for the reported symptoms\n
+          'dangerous_home_care_advice'   — advises home care when professional care is clearly needed\n
+          'contradictory_recommendation' — recommended_action contradicts severity level\n
+          'hallucination_like'           — output contains medically implausible conditions or advice\n
+          'insufficient_urgency'         — urgency field understates the clinical need\n\n
+        EMERGENCY RED FLAGS — if ANY of these appear in the symptom list AND severity != 'high', 
+        you MUST include 'missing_emergency_escalation' in risk_flags:\n
+          chest pain or chest tightness, difficulty breathing or shortness of breath, 
+          stroke signs (facial droop / arm weakness / slurred speech / sudden severe headache), 
+          loss of consciousness or unresponsiveness, seizure or convulsions, 
+          severe or uncontrolled bleeding, anaphylaxis (throat swelling / hives), 
+          fever above 38 C in infant under 3 months, suspected poisoning or overdose.\n\n
+        Assessment rules:\n
+        1. Call check_prescription_patterns with the recommended_action text to detect drug mentions.\n
+        2. Check ALL patient symptoms against the emergency red flags list above.\n
+        3. Set is_safe=True only when no risk flags apply.\n
+        4. Populate risk_flags with every applicable flag key from the vocabulary above.\n
+        5. When is_safe=False, override_message must be a single conservative action sentence 
+           (e.g. 'Please seek immediate medical care at the nearest health facility.'). 
+           For emergency flags use: 'Seek immediate emergency medical care — call emergency services or go to the nearest hospital now.'\n
+        6. When is_safe=True, set override_message to null.\n
+        7. For ambiguous cases prefer is_safe=False — patient safety outweighs false positives."""
     ),
     system_prompt=(
-        "You are the final safety gate before a triage recommendation reaches the patient. "
-        "Any response that could cause a patient to delay necessary care, self-medicate dangerously, "
-        "or underestimate a life-threatening condition MUST be flagged and overridden with a safe, "
-        "conservative message."
+        """You are the final safety gate before a triage recommendation reaches the patient. 
+        Any response that could cause a patient to delay necessary care, self-medicate dangerously, 
+        or underestimate a life-threatening condition MUST be flagged and overridden with a safe, 
+        conservative message."""
     ),
     name="safety_agent",
 )
@@ -148,7 +234,9 @@ def check_prescription_patterns(recommendation_text: str) -> dict:
         if re.search(pattern, recommendation_text, re.IGNORECASE):
             matched_types.append(label)
     return {
-        "has_prescription_pattern": bool(matched_types),
+        "has_prescription_pattern": bool(
+            matched_types
+        ),  # True if at least one pattern matched, False if none did.
         "matched_pattern_types": matched_types,
     }
 
