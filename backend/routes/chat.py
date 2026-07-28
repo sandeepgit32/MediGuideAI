@@ -25,21 +25,20 @@ Interaction types (``ChatRequest.type``):
 import logging
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..agents.language_agent import detect_language, translate_text
 from ..agents.safety_agent import assess as safety_assess
+from ..agents.summary_agent import generate_summary
 from ..agents.triage_agent import (
     answer_followup,
     triage_result_to_triage_output,
     triage_with_history,
 )
-from ..agents.summary_agent import generate_summary
 from ..config import settings
 from ..database.database import get_db
 from ..database.models import ConsultationHistory, User
-from .auth import get_current_user
 from ..schemas.chat import ChatRequest, ChatResponse
 from ..services.rag_service import rag_service
 from ..services.session_store import (
@@ -49,6 +48,7 @@ from ..services.session_store import (
     delete_session,
     get_session,
 )
+from .auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -3,24 +3,14 @@
 This module provides a Retrieval-Augmented Generation service that leverages a Docker-hosted
 Chroma vector database server for semantic search over medical guidelines. The service loads
 clinical guidelines from a JSON data file and enables similarity-based retrieval of relevant
-documents for medical consultation queries.
+documents for medical consultation queries. Chroma handles embedding generation server-side
+using its default embedding function, reducing local resource usage.
 
 The RAGService class handles:
 - Loading and managing clinical guidelines documents
 - Connecting to a Docker-hosted Chroma server via REST API
 - Creating and managing vector database collections
 - Performing semantic similarity search queries
-
-Key Features:
-- Asynchronous initialization to avoid blocking operations
-- Server-side embedding computation via Chroma for reduced local resource usage
-- Graceful error handling with fallback to empty results on failures
-- Singleton pattern for application-wide access
-
-Requirements:
-- A running Chroma server (Docker-hosted, configured via CHROMA_SERVER_HOST)
-- clinical guidelines data in JSON format (backend/data/clinical_guideline.json)
-- chromadb Python package for Chroma client
 
 Example:
     Initialize and use the RAG service in an async context:
@@ -30,10 +20,10 @@ Example:
     >>> results = rag_service.query("symptoms of pneumonia", top_k=5)
 """
 
-import os
-import json
 import asyncio
+import json
 import logging
+import os
 from typing import List
 
 from ..config import settings
@@ -45,9 +35,7 @@ class RAGService:
     """RAG service backed by a Docker-hosted Chroma server (REST API).
 
     This service requires a running Chroma server (configure `CHROMA_SERVER_HOST`
-    in the environment or via `backend/config.py`). The Chroma server will
-    compute embeddings server-side; local embedding models are intentionally
-    removed to keep the image small and rely on the Docker-hosted vector DB.
+    in the env variable). The Chroma server will compute embeddings server-side;
     """
 
     def __init__(self):

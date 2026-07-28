@@ -1,6 +1,6 @@
 """In-memory session store for MediGuideAI multi-turn chat sessions.
 
-Each session is keyed by a UUID and holds the full conversation history,
+Each session is identified by a session ID (UUID) and holds the full conversation history,
 patient data, RAG context, and triage result for one consultation.
 
 Sessions expire after SESSION_TTL_SECONDS of inactivity (default 30 minutes).
@@ -48,6 +48,9 @@ class SessionData:
 
     def touch(self) -> None:
         """Update last-used timestamp to extend the session TTL."""
+        # time.monotonic() provides a continuously increasing clock that is unaffected
+        # by system clock changes. We use it to measure elapsed time, such as tracking
+        # execution time or implementing timeouts.
         self.last_used = time.monotonic()
 
     def is_expired(self) -> bool:
@@ -137,7 +140,8 @@ async def _eviction_loop() -> None:
 
 
 def start_eviction_task() -> asyncio.Task:
-    """Spawn the background eviction coroutine and return the task handle."""
+    """Spawn the background eviction coroutine `_eviction_loop()` to run in the background
+    and return the task handle."""
     global _eviction_task
     _eviction_task = asyncio.create_task(_eviction_loop())
     logger.info(
@@ -149,7 +153,8 @@ def start_eviction_task() -> asyncio.Task:
 
 
 def stop_eviction_task() -> None:
-    """Cancel the background eviction task on shutdown."""
+    """This function is used to cancel background eviction coroutine in a graceful manner
+    during application shutdown."""
     global _eviction_task
     if _eviction_task and not _eviction_task.done():
         _eviction_task.cancel()

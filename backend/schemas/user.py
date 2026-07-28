@@ -9,6 +9,12 @@ class UserCreate(BaseModel):
 
 
 class UserResponse(BaseModel):
+    # `model_config = ConfigDict(from_attributes=True)` is used to allow Pydantic
+    # models to be created from ORM objects, such as SQLAlchemy models, instead
+    # of only from dictionaries. In FastAPI applications, database queries
+    # return objects with attributes (user.id, user.email), so `from_attributes=True `
+    # tells Pydantic to read values from those object attributes and convert
+    # them into a response model.
     model_config = ConfigDict(from_attributes=True)
 
     id: str

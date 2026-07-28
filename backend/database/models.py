@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -16,6 +16,14 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
 
+    # relationship() defines an ORM relationship between two SQLAlchemy models.
+    # In this example, a User has a one-to-many relationship with ConsultationHistory,
+    # allowing access to all of a user's consultations through user.consultations.
+    # The back_populates="user" option creates a bidirectional relationship so each
+    # ConsultationHistory object can access its parent user through consultation.user.
+    # The cascade="all, delete-orphan" option propagates operations such as save and
+    # delete from the parent to its children, and automatically deletes child records
+    # that are removed from the parent's collection and no longer belong to any parent.
     consultations = relationship(
         "ConsultationHistory", back_populates="user", cascade="all, delete-orphan"
     )
