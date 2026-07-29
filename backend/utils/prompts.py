@@ -68,16 +68,12 @@ def build_triage_history_prompt(
 
     budget_remaining = max_clarifications - clarification_count
     if budget_remaining <= 0:
-        clarification_instruction = (
-            "CLARIFICATION BUDGET EXHAUSTED — you MUST return response_type='result' now. "
-            "Do NOT ask any more questions."
-        )
+        clarification_instruction = """CLARIFICATION BUDGET EXHAUSTED — you MUST return response_type='result' now.
+            Do NOT ask any more questions."""
     else:
-        clarification_instruction = (
-            f"Clarification budget: {budget_remaining} question(s) remaining. "
-            "You may ask ONE targeted question only if it would materially change the severity "
-            "assessment. If the information already available is sufficient, return a result."
-        )
+        clarification_instruction = f"""Clarification budget: {budget_remaining} question(s) remaining.
+            You may ask ONE targeted question only if it would materially change the severity
+            assessment. If the information already available is sufficient, return a result."""
 
     prompt = f"""You are a medical triage assistant for low-resource settings. This is not a medical diagnosis.
 
@@ -113,84 +109,6 @@ Do not prescribe medications. Return valid JSON only.
     return prompt
 
 
-def build_summary_prompt(
-    symptoms_en: List[str],
-    duration: str,
-    existing_conditions: List[str],
-    conversation: List[Dict],
-    gender: Optional[str] = None,
-) -> str:
-    """Construct a prompt to generate a one-paragraph consultation summary.
-
-    Extracts clarification Q&A pairs from the conversation (skipping the
-    opening patient-info message) and asks the LLM to produce a concise
-    English summary of the reported symptoms and the Q&A exchange.
-
-    Args:
-        symptoms_en: English-translated symptom strings.
-        duration: Duration string (e.g. '3 to 7 days').
-        existing_conditions: Pre-existing conditions reported by the patient.
-        conversation: Full ``[{role, content}]`` history in English.  The
-            first user message is the auto-generated patient-info line;
-            subsequent assistant messages are clarification questions and the
-            following user messages are patient answers.
-        gender: Patient gender string ('male', 'female', or other/None).
-            Used to select the correct pronoun (he/she/they).
-
-    Returns:
-        Prompt string ready to pass to the summary agent.
-    """
-    # Choose pronoun based on gender
-    if gender == "male":
-        pronoun_instruction = "Refer to the patient as 'he/him'."
-    elif gender == "female":
-        pronoun_instruction = "Refer to the patient as 'she/her'."
-    else:
-        pronoun_instruction = "Refer to the patient as 'they/them'."
-
-    symptoms_str = ", ".join(symptoms_en) if symptoms_en else "not specified"
-    conditions_str = (
-        ", ".join(existing_conditions) if existing_conditions else "none reported"
-    )
-
-    # Extract Q&A pairs: assistant messages that are clarification questions
-    # paired with the immediately following user reply.
-    qa_lines: List[str] = []
-    i = 1  # skip index 0 (patient-info seed message)
-    while i < len(conversation):
-        msg = conversation[i]
-        if msg.get("role") == "assistant":
-            question = msg.get("content", "").strip()
-            # Skip the triage-log line (starts with "Triage:")
-            if question.startswith("Triage:"):
-                i += 1
-                continue
-            # Look for the patient's answer in the next message
-            if i + 1 < len(conversation) and conversation[i + 1].get("role") == "user":
-                answer = conversation[i + 1].get("content", "").strip()
-                qa_lines.append(f"  Q: {question}\n  A: {answer}")
-                i += 2
-                continue
-        i += 1
-
-    qa_block = (
-        "\n".join(qa_lines) if qa_lines else "(no clarification questions were asked)"
-    )
-
-    return (
-        "Write a single concise paragraph (3-5 sentences) in plain English summarising "
-        "the following medical consultation. Include the reported symptoms, how long they "
-        "have been present, any pre-existing conditions, and what the patient answered to "
-        f"each clarification question. {pronoun_instruction} "
-        "Use simple, factual language — no diagnosis, no advice.\n\n"
-        f"Symptoms: {symptoms_str}\n"
-        f"Duration: {duration}\n"
-        f"Existing conditions: {conditions_str}\n\n"
-        f"Clarification Q&A:\n{qa_block}\n\n"
-        "Return only the paragraph text, with no headings or bullet points."
-    )
-
-
 def build_translation_prompt(text: str, target: str) -> str:
     """Construct a prompt for the language agent to translate *text* into *target*.
 
@@ -201,16 +119,14 @@ def build_translation_prompt(text: str, target: str) -> str:
     Returns:
         A prompt string ready to be passed to ``_LANG_AGENT.run()``.
     """
-    return (
-        f"Translate the following text into {target}.\n\n"
-        "Requirements:\n"
-        "- Use simple language suitable for a rural, low-literacy audience.\n"
-        "- Preserve medical terminology; add a brief clarification in parentheses\n"
-        "  only if the term would be unclear to a non-specialist.\n"
-        "- Do not add advice, diagnoses, or commentary beyond what is in the source.\n"
-        "- Return only the translated text — no labels or explanations.\n\n"
-        f"Source text:\n{text}"
-    )
+    return f"""Translate the following text into {target}.
+        Requirements:
+        - Use simple language suitable for a rural, low-literacy audience.
+        - Preserve medical terminology; add a brief clarification in parentheses only if 
+            the term would be unclear to a non-specialist.
+        - Do not add advice, diagnoses, or commentary beyond what is in the source.
+        - Return only the translated text — no labels or explanations.
+        Source text:\n{text}"""
 
 
 def build_safety_prompt(triage, symptoms: List[str]) -> str:
@@ -225,13 +141,12 @@ def build_safety_prompt(triage, symptoms: List[str]) -> str:
     """
     symptom_list = "\n".join(f"  - {s}" for s in symptoms)
 
-    emergency_flags_reminder = (
-        "\nEMERGENCY RED FLAGS to check in symptoms list:\n"
-        "  chest pain, difficulty breathing, stroke signs (facial droop/arm weakness/slurred speech),\n"
-        "  loss of consciousness, seizure, severe uncontrolled bleeding, anaphylaxis (throat swelling),\n"
-        "  fever >38C in infant <3 months, suspected poisoning/overdose.\n"
-        "If ANY of these are present and severity != 'high', you MUST include 'missing_emergency_escalation'.\n"
-    )
+    emergency_flags_reminder = """
+        EMERGENCY RED FLAGS to check in symptoms list:
+          chest pain, difficulty breathing, stroke signs (facial droop/arm weakness/slurred speech),
+          loss of consciousness, seizure, severe uncontrolled bleeding, anaphylaxis (throat swelling),
+          fever >38C in infant <3 months, suspected poisoning/overdose.
+        If ANY of these are present and severity != 'high', you MUST include 'missing_emergency_escalation'.\n"""
 
     return (
         "Review the triage output and patient symptoms below. Identify any safety issues and "
@@ -308,3 +223,82 @@ def build_followup_prompt(
         prompt += f"\nRespond in language: {language}."
 
     return prompt
+
+
+# TODO: Future enhancement: Store consultation summary in DB
+def build_summary_prompt(
+    symptoms_en: List[str],
+    duration: str,
+    existing_conditions: List[str],
+    conversation: List[Dict],
+    gender: Optional[str] = None,
+) -> str:
+    """Construct a prompt to generate a one-paragraph consultation summary.
+
+    Extracts clarification Q&A pairs from the conversation (skipping the
+    opening patient-info message) and asks the LLM to produce a concise
+    English summary of the reported symptoms and the Q&A exchange.
+
+    Args:
+        symptoms_en: English-translated symptom strings.
+        duration: Duration string (e.g. '3 to 7 days').
+        existing_conditions: Pre-existing conditions reported by the patient.
+        conversation: Full ``[{role, content}]`` history in English.  The
+            first user message is the auto-generated patient-info line;
+            subsequent assistant messages are clarification questions and the
+            following user messages are patient answers.
+        gender: Patient gender string ('male', 'female', or other/None).
+            Used to select the correct pronoun (he/she/they).
+
+    Returns:
+        Prompt string ready to pass to the summary agent.
+    """
+    # Choose pronoun based on gender
+    if gender == "male":
+        pronoun_instruction = "Refer to the patient as 'he/him'."
+    elif gender == "female":
+        pronoun_instruction = "Refer to the patient as 'she/her'."
+    else:
+        pronoun_instruction = "Refer to the patient as 'they/them'."
+
+    symptoms_str = ", ".join(symptoms_en) if symptoms_en else "not specified"
+    conditions_str = (
+        ", ".join(existing_conditions) if existing_conditions else "none reported"
+    )
+
+    # Extract Q&A pairs: assistant messages that are clarification questions
+    # paired with the immediately following user reply.
+    qa_lines: List[str] = []
+    i = 1  # skip index 0 (patient-info seed message)
+    while i < len(conversation):
+        msg = conversation[i]
+        if msg.get("role") == "assistant":
+            question = msg.get("content", "").strip()
+            # Skip the triage-log line (starts with "Triage:")
+            if question.startswith("Triage:"):
+                i += 1
+                continue
+            # Look for the patient's answer in the next message
+            if i + 1 < len(conversation) and conversation[i + 1].get("role") == "user":
+                answer = conversation[i + 1].get("content", "").strip()
+                qa_lines.append(f"  Q: {question}\n  A: {answer}")
+                i += 2
+                continue
+        i += 1
+
+    qa_block = (
+        "\n".join(qa_lines) if qa_lines else "(no clarification questions were asked)"
+    )
+
+    return (
+        "Write a single concise paragraph (3-5 sentences) in plain English summarising "
+        "the following medical consultation. Include the reported symptoms, how long they "
+        "have been present, any pre-existing conditions, and what the patient answered to "
+        f"each clarification question. {pronoun_instruction} "
+        "Use simple, factual language — no diagnosis, no advice.\n\n"
+        f"Symptoms: {symptoms_str}\n"
+        f"Duration: {duration}\n"
+        f"Existing conditions: {conditions_str}\n\n"
+        f"Clarification Q&A:\n{qa_block}\n\n"
+        "Return only the paragraph text, with no headings or bullet points."
+    )

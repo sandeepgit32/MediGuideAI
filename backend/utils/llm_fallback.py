@@ -22,6 +22,8 @@ import logging
 import re
 from typing import Any, Optional
 
+from pydantic_ai.exceptions import ModelHTTPError
+
 logger = logging.getLogger(__name__)
 
 # Matches: <function=some_name>{...}</function>  OR  <function=some_name>{...}  (no closing tag)
@@ -77,8 +79,6 @@ def extract_failed_generation_json(error: Exception) -> Optional[dict]:
         the error is not a recoverable ``tool_use_failed`` case.
     """
     try:
-        from pydantic_ai.exceptions import ModelHTTPError  # noqa: PLC0415
-
         if not isinstance(error, ModelHTTPError):
             return None
 
@@ -156,7 +156,6 @@ async def run_agent_with_retry(
         The last ``ModelHTTPError`` when all attempts are exhausted and it is
         not a ``tool_use_failed`` error, or when retries run out.
     """
-    from pydantic_ai.exceptions import ModelHTTPError  # noqa: PLC0415
 
     last_exc: Optional[Exception] = None
     for attempt in range(max_retries + 1):

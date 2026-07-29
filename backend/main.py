@@ -46,6 +46,15 @@ async def lifespan(app: FastAPI):
 
     Handles startup and shutdown events for the FastAPI application.
 
+    @asynccontextmanager is a decorator from Python's contextlib module that lets you create
+    an asynchronous context manager using a simple async function instead of writing a class
+    with __aenter__() and __aexit__() methods. The code before the yield is executed when
+    entering the async with block (for setup, such as opening a database connection or
+    loading resources), and the code after the yield is executed when exiting the block
+    (for cleanup, such as closing connections), even if an exception occurs.
+    It is commonly used in FastAPI for managing application startup and shutdown tasks
+    or handling resources safely.
+
     **Startup (before yield):**
       - Initializes the RAG service with Chroma vector database connection.
       - Starts the background session TTL eviction task.
@@ -59,6 +68,7 @@ async def lifespan(app: FastAPI):
     Yields:
         None
     """
+
     logger.info("MediGuideAI starting up — initializing services")
 
     # Initialize the Retrieval-Augmented Generation (RAG) service
@@ -102,7 +112,13 @@ app = FastAPI(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log every incoming HTTP request with method, path, and elapsed time."""
+    """
+    Log every incoming HTTP request with method, path, and elapsed time.
+
+    @app.middleware("http") is a FastAPI decorator used to define HTTP middleware—code
+    that runs for every incoming request before it reaches the route handler, and again
+    after the route handler before the response is sent back to the client.
+    """
     start = time.perf_counter()
     logger.info("Request started: %s %s", request.method, request.url.path)
     response = await call_next(request)
@@ -122,7 +138,7 @@ async def log_requests(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=True,  # Allows browsers to include credentials such as cookies, authorization headers etc.
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -137,10 +153,7 @@ app.include_router(chat_router)
 @app.get("/", tags=["Health"])
 async def root():
     """
-    Health check endpoint.
-
-    Returns a simple JSON response to verify that the API is alive and responding.
-    This endpoint can be used for load balancer health checks or deployment monitoring.
+    Health check endpoint. This endpoint can be used for load balancer health checks or deployment monitoring.
 
     Returns:
         dict: A simple response with status {"ok": true, "service": "MediGuideAI"}

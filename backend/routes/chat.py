@@ -231,7 +231,7 @@ async def chat(
     if payload.type == "initial":
         if not payload.symptoms or not payload.age or not payload.duration:
             raise HTTPException(
-                status_code=422,
+                status_code=422,  # HTTP 422 Unprocessable Content
                 detail="'initial' requests require age, symptoms, and duration.",
             )
 
@@ -259,11 +259,11 @@ async def chat(
             symptoms_en_str
         ]
 
-        # RAG
+        # Fetch RAG content
         await rag_service.initialize()
         rag_contexts = rag_service.query(symptoms_en_str, top_k=settings.RAG_TOP_K)
 
-        # Create session
+        # Create session for the current consultation
         session = create_session(
             language=src_lang,
             symptoms_en=symptoms_en,

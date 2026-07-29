@@ -34,7 +34,7 @@ The goal of the application is to assist patients in reporting their symptoms in
 Create a `.env` file in the project root before starting the services and update the values.
 
 ```dotenv
-# ── LLM ──────────────────────────────────────────────────────────────────────
+# == LLM ======================================================================
 # Required for live LLM inference. Without this the heuristic fallback is used.
 LLM_API_KEY=<YOUR_API_KEY_HERE>
 
@@ -49,30 +49,33 @@ LLM_API_URL=https://api.groq.com/openai/v1
 # Examples: llama-3.1-8b-instant  |  llama-3.3-70b-versatile
 MODEL_NAME=llama-3.1-8b-instant
 
-# ── Vector DB (Chroma) ────────────────────────────────────────────────────────
+# == Vector DB (Chroma) ========================================================
 # Set automatically by docker-compose. Override when pointing to an external server.
 CHROMA_SERVER_HOST=chroma
 CHROMA_SERVER_HTTP_PORT=8000
 CHROMA_COLLECTION_NAME=clinical_guidelines
 
-# ── RAG ───────────────────────────────────────────────────────────────────────
+# == RAG =======================================================================
 RAG_TOP_K=3
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
+# == CORS ======================================================================
 # Comma-separated list of allowed origins. Defaults to wildcard (*) if omitted.
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost
 
-# ── Localisation ─────────────────────────────────────────────────────────────
+# == Localisation =============================================================
 DEFAULT_LANGUAGE=en
 
-# ── MySQL (User Accounts) ─────────────────────────────────────────────────────
-# Set automatically by docker-compose. Override when using an external MySQL server.
+# == MySQL =====================================================================
 MYSQL_HOST=mysql
 MYSQL_PORT=3306
-MYSQL_USER=<db_user>
-MYSQL_PASSWORD=<password>
-MYSQL_DATABASE=<db_name>
-MYSQL_ROOT_PASSWORD=root
+MYSQL_USER=mediguide
+MYSQL_PASSWORD=<YOUR_MYSQL_PASSWORD_HERE>
+MYSQL_DATABASE=mediguideai
+MYSQL_ROOT_PASSWORD=<YOUR_MYSQL_ROOT_PASSWORD_HERE>
+
+# == Authentication =============================================
+SECRET_KEY=<secret_key>
+ACCESS_TOKEN_EXPIRE_MINUTES=10080 # 7 days (24 x 60 x 7)
 ```
 
 > **Security note:** Never commit your `.env` file. Add it to `.gitignore`.

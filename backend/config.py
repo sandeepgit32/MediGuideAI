@@ -1,5 +1,8 @@
-from typing import List, Optional
 import os
+from typing import List, Optional
+
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 
 class Settings:
@@ -11,10 +14,8 @@ class Settings:
 
     def __init__(self):
         self.LLM_API_KEY: Optional[str] = os.environ.get("LLM_API_KEY")
-        self.LLM_API_URL: str = os.environ.get(
-            "LLM_API_URL", "https://api.groq.com/openai/v1"
-        )
-        self.MODEL_NAME: str = os.environ.get("MODEL_NAME", "llama-3.1-8b-instant")
+        self.LLM_API_URL: str = os.environ.get("LLM_API_URL")
+        self.MODEL_NAME: str = os.environ.get("MODEL_NAME")
 
         # RAG
         rag_top_k = os.environ.get("RAG_TOP_K")
@@ -24,9 +25,7 @@ class Settings:
             self.RAG_TOP_K = 3
 
         # Chroma (vector DB) configuration
-        self.CHROMA_COLLECTION_NAME: str = os.environ.get(
-            "CHROMA_COLLECTION_NAME", "clinical_guidelines"
-        )
+        self.CHROMA_COLLECTION_NAME: str = os.environ.get("CHROMA_COLLECTION_NAME")
         self.CHROMA_SERVER_HOST: Optional[str] = os.environ.get("CHROMA_SERVER_HOST")
         chroma_port = os.environ.get("CHROMA_SERVER_HTTP_PORT")
         try:
@@ -55,9 +54,6 @@ class Settings:
         any OpenAI-compatible provider (Groq, OpenAI, Ollama, …) works without
         code changes.
         """
-        from pydantic_ai.models.openai import OpenAIChatModel
-        from pydantic_ai.providers.openai import OpenAIProvider
-
         return OpenAIChatModel(
             self.MODEL_NAME,
             provider=OpenAIProvider(

@@ -1,13 +1,12 @@
 import os
-import bcrypt
 from datetime import datetime, timedelta
+
+import bcrypt
 from jose import JWTError, jwt
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY", "af9d0f3c5f473c246f485fd7f519ebff17b9b8b6d85918bb1fc1e2ee04c7c8c3"
-)
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

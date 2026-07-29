@@ -26,6 +26,8 @@ import logging
 import os
 from typing import List
 
+import chromadb
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -58,11 +60,14 @@ class RAGService:
 
         Raises:
             RuntimeError: If CHROMA_SERVER_HOST is not configured.
-            Exception: If chromadb import fails or if document loading fails.
         """
         if self._initialized:
             return
-        # Run the synchronous initialization in a thread to avoid blocking the event loop.
+        # The function `_sync_build` is a regular synchronous (blocking) function,
+        # not an async def coroutine. Calling it directly inside an async function
+        # would freeze the event loop for the duration it executes. The function
+        # `run_in_executor` is the standard way to integrate such blocking code into
+        # an asyncio application without freezing the event loop.
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._sync_build)
         self._initialized = True
@@ -76,7 +81,6 @@ class RAGService:
 
         Raises:
             RuntimeError: If CHROMA_SERVER_HOST environment variable is not set.
-            Exception: If chromadb import or Chroma operations fail.
         """
         # Load docs
         try:
@@ -97,12 +101,6 @@ class RAGService:
         if not self.docs:
             self.collection = None
             return
-
-        try:
-            import chromadb
-        except Exception as exc:
-            logger.exception("Failed to import chromadb: %s", exc)
-            raise
 
         # Require a Docker-hosted Chroma server for embeddings.
         if not settings.CHROMA_SERVER_HOST:
@@ -137,6 +135,7 @@ class RAGService:
                 {"source": "clinical_guidelines", "idx": i}
                 for i in range(len(self.docs))
             ]
+            # Adding records to the collection
             collection.add(ids=ids, documents=self.docs, metadatas=metadatas)
             logger.info("Indexed %d document(s) into Chroma", len(self.docs))
         else:
@@ -173,6 +172,7 @@ class RAGService:
             return []
         logger.debug("RAG query: top_k=%d text=%r", top_k, query_text[:120])
         try:
+            # Query matching records from the collection
             res = self.collection.query(query_texts=[query_text], n_results=top_k)
             # result format: dict with keys like 'ids','documents','distances'
             docs = []
