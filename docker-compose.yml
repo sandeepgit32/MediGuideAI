@@ -10,10 +10,6 @@ services:
       - ./backend:/app/backend
     ports:
       - "8000:8000"
-    environment:
-      # Also expose as standard OpenAI env vars so the openai package picks them up
-      - OPENAI_API_KEY=${LLM_API_KEY}
-      - OPENAI_BASE_URL=${LLM_API_URL}
     depends_on:
       chroma:
         condition: service_started
@@ -24,11 +20,6 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     env_file: .env
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_DATABASE}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
