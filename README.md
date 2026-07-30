@@ -113,3 +113,19 @@ docker compose up --build
 docker compose down
 ```
 ---
+
+## Screenshots
+
+![Screenshot-1](screenshots/Screenshot-1.png)
+
+![Screenshot-2](screenshots/Screenshot-2.png)
+
+![Screenshot-3](screenshots/Screenshot-3.png)
+
+![Screenshot-4](screenshots/Screenshot-4.png)
+
+![Screenshot-5](screenshots/Screenshot-5.png)
+
+![Screenshot-6](screenshots/Screenshot-6.png)
+
+![Screenshot-7](screenshots/Screenshot-7.png)
